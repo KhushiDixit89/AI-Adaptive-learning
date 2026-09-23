@@ -18,16 +18,16 @@ export type DifficultyLevel = 'Beginner' | 'Intermediate' | 'Advanced';
 export type SubjectType =
   | 'Mathematics'
   | 'Science'
-  | 'English'
-  | 'Computer Science'
-  | 'Social Science'
-  | 'Hindi'
   | 'Physics'
   | 'Chemistry'
   | 'Biology'
+  | 'English'
+  | 'Computer Science'
+  | 'Social Science'
   | 'Accountancy'
   | 'Business Studies'
   | 'Economics'
+  | 'Hindi'
   | 'History'
   | 'Political Science'
   | 'Geography'
@@ -118,13 +118,30 @@ export interface StudentAcademicProfile {
   level: DifficultyLevel;
 }
 
-export interface StudentProfile extends StudentAcademicProfile {
+export interface StudentProfile {
+  id: string;
   name: string;
+  email: string;
+  grade: string;
+  level: DifficultyLevel;
+  preferredSubjects: SubjectType[];
+  preferredStyle: LearningStyle;
+  isDemo?: boolean;
+  emailVerified?: boolean;
+  createdAt: string;
+  created_at?: string;
   streak: number;
-  overallProgress: number;
-  overallAccuracy: number;
-  completedLessons: number;
-  xp: number;
+  totalPoints?: number;
+  rank?: number;
+  overallProgress?: number;
+  overallAccuracy?: number;
+  completedLessons?: number;
+  xp?: number;
+  board?: BoardType;
+  stream?: StreamType;
+  classLevel?: ClassLevel;
+  syllabusUploaded?: boolean;
+  syllabusData?: Record<string, any>;
 }
 
 export interface SubjectData {
@@ -141,6 +158,7 @@ export interface SubjectData {
   color: string;
   bgLight: string;
   description: string;
+  topics?: string[];
 }
 
 export interface RecommendationItem {
@@ -186,7 +204,6 @@ export interface ActivityItem {
 export interface QuizQuestion {
   id: string;
   subject: SubjectType;
-  chapter?: string;
   topic: string;
   difficulty: DifficultyLevel;
   question: string;
@@ -194,8 +211,9 @@ export interface QuizQuestion {
   correctIndex: number;
   explanation: string;
   hint?: string;
-  classLevel?: ClassLevel;
+  chapter?: string;
   board?: BoardType;
+  classLevel?: ClassLevel;
 }
 
 export interface QuizResult {
@@ -236,10 +254,10 @@ export interface TutorMessage {
   timestamp: string;
   subject?: SubjectType;
   styleUsed?: LearningStyle;
-  attachedFile?: string;
+  attachedFile?: any;
   structuredResponse?: {
-    responseType?: 'conceptual' | 'mathematical' | 'programming' | 'document' | 'general';
-    crossSubjectNotice?: string;
+    responseType?: 'conceptual' | 'mathematical' | 'programming' | 'document' | 'general' | string;
+    crossSubjectNotice?: any;
     directAnswer: string;
     simpleExplanation: string;
     example?: string;
@@ -253,8 +271,8 @@ export interface TutorMessage {
       space: string;
     };
     visualDiagram?: string;
-    relevantContentFound?: string;
-    documentReference?: string;
+    relevantContentFound?: any;
+    documentReference?: any;
     followUpQuestions?: string[];
     practiceQuestion?: {
       question: string;
@@ -278,15 +296,30 @@ export interface UserProfile {
 
 export interface AuthUser {
   id: string;
-  email: string;
   name: string;
+  email: string;
+  grade: string;
   level: DifficultyLevel;
   preferredSubjects: SubjectType[];
-  grade?: ClassLevel | string;
+  preferredStyle: LearningStyle;
+  isDemo?: boolean;
+  emailVerified?: boolean;
+  createdAt: string;
+  created_at?: string;
   board?: BoardType;
   stream?: StreamType;
-  preferredStyle?: LearningStyle;
-  createdAt?: string;
+  classLevel?: ClassLevel;
+  syllabusData?: Record<string, {
+    fileName: string;
+    fileSize: number;
+    uploadedAt: string;
+    storagePath: string;
+    publicUrl: string;
+    extractedText: string;
+    topics: string[]; // Detected topics from PDF
+    examFocusedTopics?: Record<string, string[]>; // Chapter -> exam-focused topics (4-5 per chapter)
+    analysisComplete: boolean;
+  }>;
 }
 
 export interface LoginCredentials {
@@ -307,3 +340,163 @@ export interface SignUpData {
   preferredSubjects: SubjectType[];
 }
 
+export interface SyllabusFile {
+  subjectName: SubjectType;
+  fileName: string;
+  fileSize: number;
+  fileType: string;
+  uploadedAt: string;
+}
+
+// ============================================================================
+// AI-POWERED PRE-ASSESSMENT & DIAGNOSTIC FOUNDATION TYPES
+// ============================================================================
+
+export type PreAssessmentDifficulty = 'easy' | 'moderate' | 'difficult';
+
+export interface ExtractedChapter {
+  chapterId: string;
+  chapterName: string;
+  subject: SubjectType;
+  topics: string[];
+  prerequisites?: string[];
+  importantConcepts?: string[];
+  classLevel?: string;
+  pageNumber?: number;
+  pageRange?: { startPage: number; endPage?: number };
+  sourceMethod?: 'table_of_contents' | 'heading_detection' | 'document_structure';
+}
+
+export interface PreAssessmentQuestion {
+  questionId: string;
+  chapterId: string;
+  chapterName: string;
+  topic: string;
+  difficulty: PreAssessmentDifficulty;
+  question: string;
+  options: string[]; // Exactly 4 options
+  correctOption: number; // 0, 1, 2, or 3
+  explanation: string;
+  sourcePage?: number;
+  subject: SubjectType;
+  cognitiveType?: QuestionCognitiveType;
+}
+
+export type QuestionCognitiveType =
+  | 'definition'
+  | 'formula'
+  | 'calculation'
+  | 'conceptual'
+  | 'correct_statement'
+  | 'incorrect_statement'
+  | 'example'
+  | 'classification'
+  | 'assertion'
+  | 'matching';
+
+export interface QuestionPerformanceRecord {
+  questionId: string;
+  chapterId: string;
+  chapterName: string;
+  topic: string;
+  subject: SubjectType;
+  difficulty: PreAssessmentDifficulty;
+  selectedOption: number | null;
+  correctOption: number;
+  isCorrect: boolean;
+  timeSpentSeconds: number;
+  expectedTimeSeconds: number;
+  questionText?: string;
+  options?: string[];
+  explanation?: string;
+}
+
+export interface LearningGapEvidence {
+  questionIndex: number;
+  questionText: string;
+  difficulty: PreAssessmentDifficulty;
+  isCorrect: boolean;
+  userAnswerText?: string;
+  correctAnswerText?: string;
+}
+
+export interface LearningGapItem {
+  id: string;
+  subject: SubjectType;
+  chapterId: string;
+  chapterName: string;
+  topic: string;
+  priority: 'High Priority' | 'Needs Practice' | 'Developing' | 'Strong';
+  accuracy: number;
+  totalQuestions: number;
+  incorrectQuestions: number;
+  evidence: LearningGapEvidence[];
+  prerequisite?: string;
+}
+
+export type LearningLevelCategory =
+  | 'Needs Foundation'
+  | 'Beginner'
+  | 'Developing'
+  | 'Proficient'
+  | 'Strong';
+
+export interface RecommendedNextAction {
+  step: number;
+  title: string;
+  description: string;
+  actionType: 'review' | 'practice' | 'reassess';
+  topic: string;
+  chapter: string;
+  subject: SubjectType;
+}
+
+export interface PreAssessmentResult {
+  studentId: string;
+  assessmentId: string;
+  overallScore: number; // 0-100
+  learningLevel: LearningLevelCategory;
+  knowledgeScore: number; // 0-100 (80% weight)
+  timeEfficiencyScore: number; // 0-100 (20% weight)
+  totalQuestions: number;
+  correctAnswers: number;
+  incorrectAnswers: number;
+  unansweredAnswers: number;
+  totalTimeSeconds: number;
+  averageTimeSeconds: number;
+  chapterPerformance: Record<string, {
+    chapterName: string;
+    subject: SubjectType;
+    accuracy: number;
+    total: number;
+    correct: number;
+    easyAccuracy: number;
+    moderateAccuracy: number;
+    difficultAccuracy: number;
+  }>;
+  topicPerformance: Record<string, {
+    topicName: string;
+    chapterName: string;
+    subject: SubjectType;
+    accuracy: number;
+    total: number;
+    correct: number;
+  }>;
+  difficultyPerformance: {
+    easy: { correct: number; total: number; accuracy: number };
+    moderate: { correct: number; total: number; accuracy: number };
+    difficult: { correct: number; total: number; accuracy: number };
+  };
+  questionPerformance: QuestionPerformanceRecord[];
+  identifiedGaps: LearningGapItem[];
+  strengths: string[];
+  recommendedNextActions: RecommendedNextAction[];
+  aiRecommendation?: {
+    summary: string;
+    strengthSummary: string;
+    gapSummary: string;
+    nextSteps: string[];
+  };
+  isDemoMode?: boolean;
+  createdAt: string;
+}

@@ -21,6 +21,7 @@ export const Sidebar: React.FC = () => {
 
   const navItems = [
     { id: 'dashboard', label: 'Home', icon: Home, badge: null },
+    { id: 'pre-assessment', label: 'Pre-Assessment', icon: Sparkles, badge: 'Diagnostic' },
     { id: 'tutor', label: 'AI Tutor', icon: Bot, badge: 'Multi-Subject' },
     { id: 'subjects', label: 'Subjects', icon: BookOpen, badge: null },
     { id: 'adaptive', label: 'Adaptive Study', icon: BrainCircuit, badge: 'Live' },

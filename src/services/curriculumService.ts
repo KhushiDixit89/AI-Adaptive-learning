@@ -48,9 +48,9 @@ export function validateSubjectContext(contentSubject: string, expectedSubject: 
  * Returns available subjects for a specific Class, Board, and Stream
  */
 export function getAvailableSubjects(
-  grade: ClassLevel,
-  board: BoardType,
-  stream: StreamType
+  grade?: ClassLevel | string,
+  board: BoardType = 'CBSE',
+  stream: StreamType = 'Not applicable'
 ): SubjectData[] {
   const normGrade = normalizeGrade(grade);
   const boardStructure = CURRICULUM_STRUCTURE[normGrade]?.[board] || CURRICULUM_STRUCTURE['Class 9']['CBSE'];
@@ -90,7 +90,8 @@ export function getAvailableSubjects(
       icon: meta.icon,
       color: meta.color,
       bgLight: meta.bgLight,
-      description: meta.description
+      description: meta.description,
+      topics: (meta as any).topics || []
     };
   });
 }
@@ -99,10 +100,10 @@ export function getAvailableSubjects(
  * Retrieves chapters for a given Subject, Class, Board, and Stream
  */
 export function getChapters(
-  grade: ClassLevel,
-  board: BoardType,
-  stream: StreamType,
-  subject: string
+  grade?: ClassLevel | string,
+  board: BoardType = 'CBSE',
+  stream: StreamType = 'Not applicable',
+  subject: string = 'Mathematics'
 ): CurriculumChapter[] {
   const normGrade = normalizeGrade(grade);
   const matched = CURRICULUM_CHAPTERS.filter(
@@ -155,10 +156,10 @@ export { generateCurriculumLesson } from '../data/curriculum';
  * Returns complete dynamic lesson content with 4 learning styles
  */
 export function getLesson(
-  grade: ClassLevel,
-  board: BoardType,
-  stream: StreamType,
-  subject: string,
+  grade?: ClassLevel | string,
+  board: BoardType = 'CBSE',
+  stream: StreamType = 'Not applicable',
+  subject: string = 'Mathematics',
   chapterId?: string,
   topicId?: string
 ): CurriculumLessonContent {
@@ -170,11 +171,11 @@ export function getLesson(
  * Returns dynamic "Today's Lesson" summary for Dashboard
  */
 export function getTodaysLesson(
-  grade: ClassLevel,
-  board: BoardType,
-  stream: StreamType,
-  subject: string,
-  difficulty: DifficultyLevel
+  grade?: ClassLevel | string,
+  board: BoardType = 'CBSE',
+  stream: StreamType = 'Not applicable',
+  subject: string = 'Mathematics',
+  difficulty: DifficultyLevel = 'Intermediate'
 ) {
   const normGrade = normalizeGrade(grade);
   const lesson = getLesson(normGrade, board, stream, subject);
@@ -251,10 +252,10 @@ export function topicMatches(qTopic?: string, targetTopic?: string): boolean {
  * - If no questions exist in the database, returns an empty array [] so the UI can inform the user.
  */
 export function getQuizQuestions(
-  grade: ClassLevel,
-  board: BoardType,
-  stream: StreamType,
-  subject: string,
+  grade?: ClassLevel | string,
+  board: BoardType = 'CBSE',
+  stream: StreamType = 'Not applicable',
+  subject: string = 'Mathematics',
   chapter?: string,
   topic?: string,
   difficulty?: DifficultyLevel
@@ -291,10 +292,10 @@ export function getQuizQuestions(
  * Returns dynamic recommendations based on subject, grade, and weak areas
  */
 export function getRecommendations(
-  grade: ClassLevel,
-  board: BoardType,
-  stream: StreamType,
-  subject: string,
+  grade?: ClassLevel | string,
+  board: BoardType = 'CBSE',
+  stream: StreamType = 'Not applicable',
+  subject: string = 'Mathematics',
   weakTopics: string[] = [],
   accuracy: number = 75
 ): RecommendationItem[] {
@@ -332,10 +333,10 @@ export function getRecommendations(
  * Returns dynamic Learning Path nodes for a subject
  */
 export function getLearningPath(
-  grade: ClassLevel,
-  board: BoardType,
-  stream: StreamType,
-  subject: string
+  grade?: ClassLevel | string,
+  board: BoardType = 'CBSE',
+  stream: StreamType = 'Not applicable',
+  subject: string = 'Mathematics'
 ): LearningPathNode[] {
   const normGrade = normalizeGrade(grade);
   const chapters = getChapters(normGrade, board, stream, subject);
@@ -344,7 +345,7 @@ export function getLearningPath(
   let step = 1;
 
   chapters.forEach((ch, chIdx) => {
-    ch.topics.forEach((t, tIdx) => {
+    ch.topics.forEach((t: any, tIdx: number) => {
       const isFirst = chIdx === 0 && tIdx === 0;
       const isSecond = chIdx === 0 && tIdx === 1;
 

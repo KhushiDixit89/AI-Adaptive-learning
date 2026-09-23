@@ -2,6 +2,8 @@ import React from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { StudentProvider, useStudent } from './context/StudentContext';
 import { AuthScreen } from './components/auth/AuthScreen';
+import { SyllabusUploadView } from './components/SyllabusUploadView';
+import { SyllabusAnalysisView } from './components/SyllabusAnalysisView';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { Dashboard } from './components/Dashboard';
@@ -15,6 +17,7 @@ import { AnalyticsView } from './components/AnalyticsView';
 import { UploadMaterialView } from './components/UploadMaterialView';
 import { ProfileModal } from './components/ProfileModal';
 import { JudgeDemoTour } from './components/JudgeDemoTour';
+import { PreAssessmentView } from './components/PreAssessmentView';
 import { AlertCircle, CheckCircle, Info, X, GraduationCap, Loader2, Sparkles } from 'lucide-react';
 
 const AppContent: React.FC = () => {
@@ -40,6 +43,10 @@ const AppContent: React.FC = () => {
         return <LearningPathView />;
       case 'upload':
         return <UploadMaterialView />;
+      case 'syllabus-analysis':
+        return <SyllabusAnalysisView />;
+      case 'pre-assessment':
+        return <PreAssessmentView />;
       case 'profile':
         return <ProfileModal />;
       default:
@@ -112,7 +119,8 @@ const AppContent: React.FC = () => {
 };
 
 const AppRoot: React.FC = () => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading, pendingVerificationEmail, resendVerificationEmail } = useAuth();
+  const { syllabusUploaded } = useStudent();
 
   // Initializing auth session loader
   if (isLoading) {
@@ -164,7 +172,74 @@ const AppRoot: React.FC = () => {
 
   // Route & View Protection: unauthenticated users only see the Authentication Screen
   if (!isAuthenticated) {
+    // If there is a pending verification email (after signup), show verification screen
+    if (pendingVerificationEmail) {
+      return (
+        <div style={{
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'var(--bg-page)'
+        }}>
+          <div style={{
+            width: '64px',
+            height: '64px',
+            borderRadius: '18px',
+            background: 'linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#FFFFFF',
+            boxShadow: '0 10px 25px rgba(79, 70, 229, 0.35)',
+            marginBottom: '24px'
+          }}>
+            <CheckCircle size={32} />
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <h2 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#1E293B', marginBottom: '16px' }}>
+              Almost there!
+            </h2>
+            <p style={{ fontSize: '1.1rem', color: '#64748B', maxWidth: '400px', marginBottom: '24px', lineHeight: '1.6' }}>
+              We've sent a verification link to <strong>{pendingVerificationEmail}</strong>. Please check your inbox (and spam folder) and click the link to verify your email.
+            </p>
+            <button
+              onClick={resendVerificationEmail}
+              className="btn btn-outline"
+              style={{ padding: '10px 24px', fontSize: '0.9rem' }}
+            >
+              Resend Verification Email
+            </button>
+            <p style={{ fontSize: '0.85rem', color: '#94A3B8', marginTop: '16px' }}>
+              Didn't receive the email?{' '}
+              <button
+                onClick={resendVerificationEmail}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#4F46E5',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: '0.85rem',
+                  padding: 0
+                }}
+              >
+                Resend
+              </button>
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    // Otherwise show regular auth screen (login/signup)
     return <AuthScreen />;
+  }
+
+  // One-time syllabus upload onboarding (skip for demo users and returning users who already uploaded)
+  if (!syllabusUploaded && user && !user.isDemo) {
+    return <SyllabusUploadView />;
   }
 
   // Authenticated users enter the protected main dashboard

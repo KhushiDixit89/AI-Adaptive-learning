@@ -1,4 +1,4 @@
-import { SubjectData, RecommendationItem, StudyPlanItem, LearningPathNode, ActivityItem } from '../types';
+import { SubjectData, RecommendationItem, StudyPlanItem, LearningPathNode, ActivityItem, SubjectType } from '../types';
 
 export const INITIAL_SUBJECTS: SubjectData[] = [
   {
@@ -14,7 +14,21 @@ export const INITIAL_SUBJECTS: SubjectData[] = [
     icon: '📐',
     color: '#4F46E5',
     bgLight: '#EEF2FF',
-    description: 'Quadratic equations, circles, trigonometry, triangles & algebra.'
+    description: 'Quadratic equations, circles, trigonometry, triangles & algebra.',
+    topics: [
+      'Quadratic Equations',
+      'Circle Theorems',
+      'Trigonometry',
+      'Triangles',
+      'Algebraic Expressions',
+      'Linear Equations',
+      'Coordinate Geometry',
+      'Polynomials',
+      'Exponents and Radicals',
+      'Functions and Graphs',
+      'Statistics and Probability',
+      'Mensuration'
+    ]
   },
   {
     id: 'subj-sci',
@@ -29,7 +43,21 @@ export const INITIAL_SUBJECTS: SubjectData[] = [
     icon: '🔬',
     color: '#059669',
     bgLight: '#ECFDF5',
-    description: 'Carbon and its compounds, genetics, electricity & human body.'
+    description: 'Carbon and its compounds, genetics, electricity & human body.',
+    topics: [
+      'Carbon Compounds',
+      'Genetics',
+      'Electric Circuits',
+      'Human Body Systems',
+      'Chemical Bonding',
+      'Periodic Table',
+      'Acids and Bases',
+      'Metals and Non-metals',
+      'Motion and Force',
+      'Work and Energy',
+      'Sound and Light',
+      'Environmental Science'
+    ]
   },
   {
     id: 'subj-eng',
@@ -44,7 +72,21 @@ export const INITIAL_SUBJECTS: SubjectData[] = [
     icon: '📖',
     color: '#D97706',
     bgLight: '#FEF3C7',
-    description: 'Literature analysis, voice, direct/indirect speech & composition.'
+    description: 'Literature analysis, voice, direct/indirect speech & composition.',
+    topics: [
+      'Literary Devices',
+      'Narrative Voice',
+      'Direct and Indirect Speech',
+      'Essay Writing',
+      'Poetry Analysis',
+      'Grammar',
+      'Vocabulary',
+      'Creative Writing',
+      'Comprehension Passages',
+      'Letter Writing',
+      'Dialogue Completion',
+      'Sentence Transformation'
+    ]
   },
   {
     id: 'subj-cs',
@@ -59,7 +101,21 @@ export const INITIAL_SUBJECTS: SubjectData[] = [
     icon: '💻',
     color: '#7C3AED',
     bgLight: '#F5F3FF',
-    description: 'Data structures, algorithm complexity, recursion & Python.'
+    description: 'Data structures, algorithm complexity, recursion & Python.',
+    topics: [
+      'Arrays',
+      'Linked Lists',
+      'Stacks and Queues',
+      'Trees',
+      'Sorting Algorithms',
+      'Searching Algorithms',
+      'Recursion',
+      'Python Basics',
+      'Object-Oriented Programming',
+      'File Handling',
+      'Database Basics',
+      'Web Development'
+    ]
   },
   {
     id: 'subj-sst',
@@ -74,9 +130,46 @@ export const INITIAL_SUBJECTS: SubjectData[] = [
     icon: '🌍',
     color: '#DC2626',
     bgLight: '#FEF2F2',
-    description: 'World history, democratic politics, geography & economics.'
+    description: 'World history, democratic politics, geography & economics.',
+    topics: [
+      'World History',
+      'Indian Constitution',
+      'Federalism',
+      'Democracy',
+      'Physical Geography',
+      'Economic Sectors',
+      'French Revolution',
+      'Globalization',
+      'Climate Change',
+      'Population Studies',
+      'International Relations',
+      'Disaster Management'
+    ]
   }
 ];
+
+export const mockCurriculum: Record<SubjectType, { topics: string[]; description: string }> = {
+  'Mathematics': {
+    topics: INITIAL_SUBJECTS[0].topics || [],
+    description: INITIAL_SUBJECTS[0].description
+  },
+  'Science': {
+    topics: INITIAL_SUBJECTS[1].topics || [],
+    description: INITIAL_SUBJECTS[1].description
+  },
+  'English': {
+    topics: INITIAL_SUBJECTS[2].topics || [],
+    description: INITIAL_SUBJECTS[2].description
+  },
+  'Computer Science': {
+    topics: INITIAL_SUBJECTS[3].topics || [],
+    description: INITIAL_SUBJECTS[3].description
+  },
+  'Social Science': {
+    topics: INITIAL_SUBJECTS[4].topics || [],
+    description: INITIAL_SUBJECTS[4].description
+  }
+};
 
 export const INITIAL_RECOMMENDATIONS: RecommendationItem[] = [
   {

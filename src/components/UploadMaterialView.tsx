@@ -482,11 +482,19 @@ export const UploadMaterialView: React.FC = () => {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => setActiveTab('pre-assessment')}
+                  className="btn btn-primary"
+                  style={{ padding: '10px 20px', display: 'flex', alignItems: 'center', gap: '8px' }}
+                >
+                  <Sparkles size={16} />
+                  <span>Start Pre-Assessment</span>
+                </button>
                 <button
                   onClick={() => setActiveTab('tutor')}
-                  className="btn btn-primary"
-                  style={{ padding: '10px 22px' }}
+                  className="btn btn-outline"
+                  style={{ padding: '10px 20px', display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#FFFFFF' }}
                 >
                   <span>Chat with AI Tutor</span>
                   <ArrowRight size={16} />

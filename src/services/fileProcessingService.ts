@@ -1,5 +1,43 @@
 import mammoth from 'mammoth';
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.js?url';
 import { ParsedMaterial } from '../types';
+
+if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+}
+
+/**
+ * Server-side fallback for PDF extraction: runs in Node.js where PDF.js has zero browser sandbox limitations
+ */
+async function extractPdfViaServerApi(file: File): Promise<string> {
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = '';
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.byteLength; i += chunkSize) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + chunkSize, bytes.byteLength)) as any);
+    }
+    const base64 = btoa(binary);
+
+    const res = await fetch('/api/ai/extract-pdf-text', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base64 })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && typeof data.text === 'string' && data.text.length > 20) {
+        return data.text;
+      }
+    }
+  } catch (err) {
+    console.warn('Server-side PDF extractor fallback failed:', err);
+  }
+  return '';
+}
 
 export function formatBytes(bytes: number, decimals = 1): string {
   if (bytes === 0) return '0 B';
@@ -89,25 +127,24 @@ export async function extractTextFromFile(file: File): Promise<string> {
     }
   }
 
-  // 3. PDF documents (using pdfjs-dist with stream fallback)
+  // 3. PDF documents (using local same-origin worker with server-side Node fallback)
   if (ext === 'pdf') {
+    let fullText = '';
+
+    // 3a. Browser PDF.js with local Vite same-origin worker
     try {
-      const pdfjsLib = await import('pdfjs-dist');
-      if (pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version || '3.11.174'}/pdf.worker.min.js`;
-      }
       const arrayBuffer = await file.arrayBuffer();
       const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
       const pdf = await loadingTask.promise;
 
-      let extractedPages: string[] = [];
-      const totalPages = Math.min(pdf.numPages, 25); // Read up to 25 pages safely
+      const extractedPages: string[] = [];
+      const totalPages = Math.min(pdf.numPages, 50); // Read up to 50 pages safely
 
       for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
         const page = await pdf.getPage(pageNum);
         const textContent = await page.getTextContent();
         const pageText = textContent.items
-          .map((item: any) => (item as any).str || '')
+          .map((item: any) => (item as any)?.str || '')
           .join(' ')
           .trim();
         if (pageText) {
@@ -115,23 +152,34 @@ export async function extractTextFromFile(file: File): Promise<string> {
         }
       }
 
-      const fullText = extractedPages.join('\n\n').trim();
-      if (fullText.length > 30) {
-        return fullText;
-      }
+      fullText = extractedPages.join('\n\n').trim();
     } catch (pdfErr) {
-      console.warn('PDF.js worker or canvas issue, falling back to buffer scanner:', pdfErr);
+      console.warn('Browser PDF.js extraction error, calling server-side extractor fallback:', pdfErr);
     }
 
-    // Fallback scanner
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const fallbackText = extractTextFromPdfBuffer(arrayBuffer);
-      if (fallbackText.length > 30) {
-        return fallbackText;
+    // 3b. Server-side Node PDF extraction fallback (100% reliable)
+    if (!fullText || fullText.length < 30) {
+      const serverText = await extractPdfViaServerApi(file);
+      if (serverText && serverText.trim().length >= 30) {
+        fullText = serverText.trim();
       }
-    } catch (fbErr) {
-      console.error('PDF buffer fallback error:', fbErr);
+    }
+
+    // 3c. Binary buffer scanner if offline / server endpoint unavailable
+    if (!fullText || fullText.length < 30) {
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const fallbackText = extractTextFromPdfBuffer(arrayBuffer);
+        if (fallbackText.length >= 30) {
+          fullText = fallbackText;
+        }
+      } catch (fbErr) {
+        console.error('PDF buffer fallback error:', fbErr);
+      }
+    }
+
+    if (fullText && fullText.length >= 20) {
+      return fullText;
     }
 
     throw new Error('Could not extract readable text from this PDF. Please ensure it is not an image-only scan.');

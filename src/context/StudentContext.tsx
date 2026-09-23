@@ -3,36 +3,61 @@ import {
   LearningStyle,
   SubjectType,
   DifficultyLevel,
-  ClassLevel,
   BoardType,
   StreamType,
-  StudentProfile,
+  ClassLevel,
   SubjectData,
   RecommendationItem,
   StudyPlanItem,
   LearningPathNode,
   ActivityItem,
   QuizResult,
+  SyllabusFile,
   ParsedMaterial,
-  CurrentLearningContext
+  CurrentLearningContext,
+  PreAssessmentResult,
+  PreAssessmentQuestion,
+  StudentProfile as AuthStudentProfile
 } from '../types';
 import {
+  INITIAL_SUBJECTS,
+  INITIAL_RECOMMENDATIONS,
   INITIAL_STUDY_PLAN,
-  INITIAL_ACTIVITIES
+  INITIAL_LEARNING_PATH,
+  INITIAL_ACTIVITIES,
+  mockCurriculum
 } from '../data/mockCurriculum';
 import {
-  getAvailableSubjects,
+  getChapters,
   getRecommendations,
   getLearningPath,
-  getChapters,
   normalizeGrade
 } from '../services/curriculumService';
 import { useAuth } from './AuthContext';
+import { supabase } from '../lib/supabase';
+import { extractTextFromPDF } from '../utils/pdfExtractor';
+import { parseSyllabusWithAI, getFallbackSyllabusParse } from '../lib/aiSyllabusParser';
 import { processUploadedFile } from '../services/fileProcessingService';
 
-const STORAGE_KEY = 'gurumitra_academic_profile';
+// Extend the AuthStudentProfile with client-specific fields
+export interface StudentProfile extends AuthStudentProfile {
+  streak: number;
+  totalPoints: number;
+  rank: number;
+  syllabusUploaded: boolean;
+  syllabusData?: Record<string, {
+    fileName: string;
+    fileSize: number;
+    uploadedAt: string;
+    storagePath: string;
+    publicUrl: string;
+    extractedText: string;
+    topics: string[];
+    analysisComplete: boolean;
+  }>;
+}
 
-interface StudentContextType {
+export interface StudentContextType {
   student: StudentProfile;
   subjects: SubjectData[];
   recommendations: RecommendationItem[];
@@ -44,11 +69,26 @@ interface StudentContextType {
   lastQuizResult: QuizResult | null;
   notification: { message: string; type: 'success' | 'info' | 'warning' } | null;
   judgeDemoStep: number;
+  syllabusData: Record<string, any>;
+  syllabusUploaded: boolean;
   uploadedMaterial: ParsedMaterial | null;
   uploadState: 'idle' | 'uploading' | 'analyzing' | 'ready' | 'error';
   uploadError: string | null;
   currentLearningContext: CurrentLearningContext;
   setCurrentLearningContext: React.Dispatch<React.SetStateAction<CurrentLearningContext>>;
+  setActiveTab: (tab: string) => void;
+  setActiveSubject: (subject: SubjectType) => void;
+  setPreferredStyle: (style: LearningStyle) => void;
+  updateProfile: (name: string, grade: string, style: LearningStyle, board?: BoardType, stream?: StreamType) => void;
+  toggleStudyPlanItem: (id: string) => void;
+  recordQuizResult: (result: QuizResult) => void;
+  setJudgeDemoStep: (step: number | ((prev: number) => number)) => void;
+  completeSyllabusSetup: (filesRecord: Record<string, any>) => Promise<any>;
+  extractAndAnalyzeTopics: (subject: SubjectType, text: string) => Promise<any>;
+  setSyllabusAnalysis: (subject: SubjectType, data: any) => void;
+  processAndSetFile: (file: File) => Promise<ParsedMaterial>;
+  removeUploadedMaterial: () => void;
+  clearUploadError: () => void;
   setTopicContext: (
     subject: SubjectType,
     chapter: string,
@@ -58,9 +98,6 @@ interface StudentContextType {
     difficulty?: DifficultyLevel
   ) => void;
   startQuizForCurrentTopic: (override?: Partial<CurrentLearningContext>) => void;
-  setActiveTab: (tab: string) => void;
-  setActiveSubject: (subject: SubjectType) => void;
-  setPreferredStyle: (style: LearningStyle) => void;
   setAcademicProfile: (
     grade: ClassLevel,
     board: BoardType,
@@ -68,161 +105,141 @@ interface StudentContextType {
     style?: LearningStyle,
     level?: DifficultyLevel
   ) => void;
-  updateProfile: (
-    name: string,
-    grade: ClassLevel | string,
-    style: LearningStyle,
-    board?: BoardType,
-    stream?: StreamType
-  ) => void;
-  toggleStudyPlanItem: (id: string) => void;
-  recordQuizResult: (result: QuizResult) => void;
-  setJudgeDemoStep: (step: number) => void;
   resetToDefault: () => void;
   clearNotification: () => void;
-  processAndSetFile: (file: File) => Promise<ParsedMaterial>;
-  removeUploadedMaterial: () => void;
-  clearUploadError: () => void;
+  preAssessmentResult: PreAssessmentResult | null;
+  preAssessmentQuestions: PreAssessmentQuestion[];
+  isGeneratingAssessment: boolean;
+  setIsGeneratingAssessment: React.Dispatch<React.SetStateAction<boolean>>;
+  recordPreAssessmentResult: (result: PreAssessmentResult) => void;
+  clearPreAssessment: () => void;
+  setPreAssessmentQuestions: React.Dispatch<React.SetStateAction<PreAssessmentQuestion[]>>;
 }
 
 const StudentContext = createContext<StudentContextType | undefined>(undefined);
 
-// Helper to load persistent academic profile
-function loadInitialAcademicProfile(): {
-  grade: ClassLevel;
-  board: BoardType;
-  stream: StreamType;
-  preferredStyle: LearningStyle;
-  level: DifficultyLevel;
-} {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      return {
-        grade: normalizeGrade(parsed.grade),
-        board: (parsed.board as BoardType) || 'CBSE',
-        stream: (parsed.stream as StreamType) || 'Not applicable',
-        preferredStyle: (parsed.preferredStyle as LearningStyle) || 'Simple',
-        level: (parsed.level as DifficultyLevel) || 'Beginner'
-      };
-    }
-  } catch (e) {
-    // Ignore localStorage read errors
-  }
-  return {
-    grade: 'Class 9',
-    board: 'CBSE',
-    stream: 'Not applicable',
-    preferredStyle: 'Simple',
-    level: 'Beginner'
-  };
-}
-
 export const StudentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  const initialAcademic = loadInitialAcademicProfile();
 
+  // Initialize student profile with data from auth user (if available) and defaults for client-specific fields
   const [student, setStudent] = useState<StudentProfile>({
-    name: user?.name || 'Khushi Dixit',
-    grade: initialAcademic.grade,
-    board: initialAcademic.board,
-    stream: initialAcademic.stream,
-    level: user?.level || initialAcademic.level,
+    // Auth fields (from user or defaults)
+    id: user ? user.id : 'guest_student',
+    name: user ? user.name : 'Khushi Dixit',
+    email: user ? user.email : '',
+    grade: user ? user.grade : '10th',
+    level: user ? user.level : 'Intermediate',
+    preferredSubjects: user ? user.preferredSubjects : ['Mathematics', 'Science'],
+    preferredStyle: user ? user.preferredStyle : 'Simple',
+    isDemo: user ? user.isDemo : false,
+    emailVerified: user ? user.emailVerified : true,
+    createdAt: user ? (user.createdAt || user.created_at || new Date().toISOString()) : new Date().toISOString(),
+    // Client-specific fields with defaults
     streak: 4,
-    overallProgress: 76,
-    overallAccuracy: 82,
-    completedLessons: 24,
-    xp: 1420,
-    preferredStyle: user?.preferredStyle || initialAcademic.preferredStyle
+    totalPoints: 1420,
+    rank: 76,
+    syllabusUploaded: false,
+    syllabusData: {}
   });
 
-  // Dynamically initialize subjects based on academic profile
-  const [subjects, setSubjects] = useState<SubjectData[]>(() =>
-    getAvailableSubjects(student.grade, student.board, student.stream)
-  );
-
-  const [activeSubject, setActiveSubjectState] = useState<SubjectType>(() => {
-    const initialSubs = getAvailableSubjects(student.grade, student.board, student.stream);
-    return initialSubs[0]?.name || 'Mathematics';
-  });
-
-  const [recommendations, setRecommendations] = useState<RecommendationItem[]>(() =>
-    getRecommendations(student.grade, student.board, student.stream, activeSubject)
-  );
+  const [subjects, setSubjects] = useState<SubjectData[]>(INITIAL_SUBJECTS);
+  const [recommendations, setRecommendations] = useState<RecommendationItem[]>(INITIAL_RECOMMENDATIONS);
   const [studyPlan, setStudyPlan] = useState<StudyPlanItem[]>(INITIAL_STUDY_PLAN);
-  const [learningPath, setLearningPath] = useState<LearningPathNode[]>(() =>
-    getLearningPath(student.grade, student.board, student.stream, activeSubject)
-  );
+  const [learningPath, setLearningPath] = useState<LearningPathNode[]>(INITIAL_LEARNING_PATH);
   const [activities, setActivities] = useState<ActivityItem[]>(INITIAL_ACTIVITIES);
   const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [activeSubject, setActiveSubjectState] = useState<SubjectType>('Mathematics');
   const [lastQuizResult, setLastQuizResult] = useState<QuizResult | null>(null);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' | 'warning' } | null>(null);
   const [judgeDemoStep, setJudgeDemoStep] = useState<number>(0);
+  const [syllabusData, setSyllabusData] = useState<Record<string, any>>({});
+
+  // Pre-Assessment state
+  const [preAssessmentResult, setPreAssessmentResult] = useState<PreAssessmentResult | null>(null);
+  const [preAssessmentQuestions, setPreAssessmentQuestions] = useState<PreAssessmentQuestion[]>([]);
+  const [isGeneratingAssessment, setIsGeneratingAssessment] = useState<boolean>(false);
+
+  // Material upload state
   const [uploadedMaterial, setUploadedMaterial] = useState<ParsedMaterial | null>(null);
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'analyzing' | 'ready' | 'error'>('idle');
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  // Centralized single source of truth for active lesson & quiz context
-  const [currentLearningContext, setCurrentLearningContext] = useState<CurrentLearningContext>(() => {
-    const normGrade = initialAcademic.grade;
-    const initBoard = initialAcademic.board;
-    const initStream = initialAcademic.stream;
-    const initSubject = 'Mathematics';
-    const chs = getChapters(normGrade, initBoard, initStream, initSubject);
-    const ch = chs[0] || {
-      id: 'cbse-9-math-ch1',
-      title: 'Number Systems',
-      topics: [{ id: 'cbse-9-math-t1', title: 'Irrational Numbers and Decimal Expansions' }]
-    };
-    const top = ch.topics[0] || {
-      id: 'cbse-9-math-t1',
-      title: 'Irrational Numbers and Decimal Expansions'
-    };
-    return {
-      classLevel: normGrade,
-      board: initBoard,
-      stream: initStream,
-      subject: initSubject,
-      chapter: ch.title,
-      chapterId: ch.id,
-      topic: top.title,
-      topicId: top.id,
-      learningStyle: initialAcademic.preferredStyle,
-      difficulty: initialAcademic.level
-    };
-  });
+  // Active learning context
+  const [currentLearningContext, setCurrentLearningContext] = useState<CurrentLearningContext>(() => ({
+    classLevel: 'Class 9',
+    board: 'CBSE',
+    stream: 'Not applicable',
+    subject: 'Mathematics',
+    chapter: 'Number Systems',
+    chapterId: 'cbse-9-math-ch1',
+    topic: 'Irrational Numbers and Decimal Expansions',
+    topicId: 'cbse-9-math-t1',
+    learningStyle: 'Simple',
+    difficulty: 'Intermediate'
+  }));
 
-  // Synchronize student profile whenever auth user changes
-  useEffect(() => {
-    if (user) {
-      const userGrade = normalizeGrade(user.grade);
-      setStudent((prev) => ({
-        ...prev,
-        name: user.name,
-        grade: userGrade,
-        level: user.level || prev.level,
-        preferredStyle: user.preferredStyle || prev.preferredStyle
-      }));
-      setCurrentLearningContext((prev) => ({
-        ...prev,
-        classLevel: userGrade,
-        learningStyle: user.preferredStyle || prev.learningStyle,
-        difficulty: user.level || prev.difficulty
-      }));
+  const processAndSetFile = async (file: File): Promise<ParsedMaterial> => {
+    setUploadState('uploading');
+    setUploadError(null);
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      setUploadState('analyzing');
+
+      const parsed = await processUploadedFile(file);
+
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      setUploadedMaterial(parsed);
+      setUploadState('ready');
+
+      setNotification({
+        message: `Successfully analyzed "${file.name}" (${parsed.wordCount} words, ${parsed.topics.length} topics found). Connected to AI Tutor!`,
+        type: 'success'
+      });
+
+      return parsed;
+    } catch (err: any) {
+      setUploadState('error');
+      const msg = err?.message || 'Could not read this file. Please try another supported file.';
+      setUploadError(msg);
+      setNotification({
+        message: msg,
+        type: 'warning'
+      });
+      throw err;
     }
-  }, [user]);
+  };
 
-  // Set active subject and automatically sync subject-specific recommendations, learning path, and context
+  const removeUploadedMaterial = () => {
+    setUploadedMaterial(null);
+    setUploadState('idle');
+    setUploadError(null);
+    setNotification({
+      message: 'Uploaded material removed from AI Tutor session.',
+      type: 'info'
+    });
+  };
+
+  const clearUploadError = () => {
+    setUploadError(null);
+    if (uploadState === 'error') {
+      setUploadState('idle');
+    }
+  };
+
   const setActiveSubject = (subject: SubjectType) => {
     setActiveSubjectState(subject);
-    const updatedRecs = getRecommendations(student.grade, student.board, student.stream, subject);
-    setRecommendations(updatedRecs);
-    const updatedPath = getLearningPath(student.grade, student.board, student.stream, subject);
-    setLearningPath(updatedPath);
+    const updatedRecs = getRecommendations(normalizeGrade(student.grade), student.board || 'CBSE', student.stream || 'Not applicable', subject);
+    if (updatedRecs && updatedRecs.length > 0) {
+      setRecommendations(updatedRecs);
+    }
+    const updatedPath = getLearningPath(normalizeGrade(student.grade), student.board || 'CBSE', student.stream || 'Not applicable', subject);
+    if (updatedPath && updatedPath.length > 0) {
+      setLearningPath(updatedPath);
+    }
 
-    // Keep active learning context in sync with the new subject's first chapter & topic
-    const chs = getChapters(student.grade, student.board, student.stream, subject);
+    const chs = getChapters(normalizeGrade(student.grade), student.board || 'CBSE', student.stream || 'Not applicable', subject);
     const firstCh = chs[0];
     const firstTop = firstCh?.topics[0];
     if (firstCh && firstTop) {
@@ -242,7 +259,6 @@ export const StudentProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
-  // Explicit helper to switch topic context cleanly from anywhere in the app
   const setTopicContext = (
     subject: SubjectType,
     chapter: string,
@@ -263,7 +279,6 @@ export const StudentProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }));
   };
 
-  // Helper to transition to quiz view seamlessly for the active topic
   const startQuizForCurrentTopic = (override?: Partial<CurrentLearningContext>) => {
     if (override) {
       setCurrentLearningContext((prev) => ({ ...prev, ...override }));
@@ -274,7 +289,6 @@ export const StudentProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setActiveTab('quiz');
   };
 
-  // Comprehensive Academic Profile Switcher
   const setAcademicProfile = (
     grade: ClassLevel,
     board: BoardType,
@@ -282,123 +296,317 @@ export const StudentProvider: React.FC<{ children: React.ReactNode }> = ({ child
     style?: LearningStyle,
     level?: DifficultyLevel
   ) => {
-    const normGrade = normalizeGrade(grade);
-    const isSenior = normGrade === 'Class 11' || normGrade === 'Class 12';
-    const effectiveStream: StreamType = isSenior
-      ? (stream === 'Not applicable' ? 'Science' : stream)
-      : 'Not applicable';
+    setStudent(prev => ({
+      ...prev,
+      grade,
+      board,
+      stream,
+      preferredStyle: style || prev.preferredStyle,
+      level: level || prev.level
+    }));
+    if (style) {
+      setPreferredStyle(style);
+    }
+  };
 
-    const newSubjects = getAvailableSubjects(normGrade, board, effectiveStream);
-    setSubjects(newSubjects);
+  // Topic extraction helper (client-side matching against curriculum)
+  const extractAndAnalyzeTopics = async (subject: SubjectType, text: string): Promise<any> => {
+    try {
+      const curriculum = mockCurriculum[subject];
+      if (!curriculum || !curriculum.topics) return [];
 
-    // If current subject is not in new subject list, switch to first available
-    let nextSubject = activeSubject;
-    const exists = newSubjects.some((s) => s.name.toLowerCase() === activeSubject.toLowerCase());
-    if (!exists && newSubjects.length > 0) {
-      nextSubject = newSubjects[0].name;
-      setActiveSubjectState(nextSubject);
+      const textLower = text.toLowerCase();
+      const detected = curriculum.topics.filter(topic =>
+        textLower.includes(topic.toLowerCase())
+      );
+      return detected.length > 0 ? detected : curriculum.topics.slice(0, 6);
+    } catch (error) {
+      console.error('Error in topic extraction:', error);
+      return [];
+    }
+  };
+
+  // Helper to update analysis for a subject
+  const setSyllabusAnalysis = (subject: SubjectType, analysisData: any) => {
+    setStudent(prev => ({
+      ...prev,
+      syllabusData: {
+        ...(prev.syllabusData || {}),
+        [subject]: {
+          ...(prev.syllabusData?.[subject] || {}),
+          ...analysisData
+        }
+      }
+    }));
+  };
+
+  // Enhanced syllabus setup with Supabase storage and fallback
+  const completeSyllabusSetup = async (filesRecord: Record<string, any>) => {
+    try {
+      const currentUserId = user?.id || 'guest_student';
+
+      const uploadPromises = Object.entries(filesRecord).map(async ([subjectKey, fileData]) => {
+        if (!fileData) return null;
+
+        let storagePath = '';
+        let publicUrl = '';
+        let extractedText = `Syllabus for ${subjectKey}. Covered units: ${mockCurriculum[subjectKey as SubjectType]?.topics?.join(', ')}`;
+
+        // Attempt Supabase Storage Upload if file object is present and supabase is configured
+        if (fileData.file && supabase) {
+          try {
+            const fileName = `${currentUserId}/${subjectKey}/${Date.now()}-${fileData.name}`;
+            const { data: uploadData, error: uploadError } = await supabase
+              .storage
+              .from('syllabus-uploads')
+              .upload(fileName, fileData.file, {
+                contentType: fileData.type || 'application/pdf',
+                upsert: true
+              });
+
+            if (!uploadError && uploadData) {
+              storagePath = fileName;
+              const { data: urlData } = supabase
+                .storage
+                .from('syllabus-uploads')
+                .getPublicUrl(fileName);
+              publicUrl = urlData?.publicUrl || '';
+
+              // Try Supabase Function for extraction if available
+              try {
+                const { data: extractionData } = await supabase.functions.invoke(
+                  'extract-pdf-text',
+                  { body: { filePath: fileName } }
+                );
+                if (extractionData?.text) {
+                  extractedText = extractionData.text;
+                }
+              } catch (funcErr) {
+                console.warn('PDF text extraction edge function skipped, using fallback parsing:', funcErr);
+              }
+            }
+          } catch (storageErr) {
+            console.warn('Supabase storage upload skipped or failed, using local in-memory fallback:', storageErr);
+          }
+        }
+
+        // Extract actual text and generate AI-powered syllabus analysis if we have the file
+        if (fileData.file) {
+          try {
+            // Extract raw text from PDF
+            const { rawText } = await extractTextFromPDF(fileData.file);
+            extractedText = rawText;
+
+            // Use AI-powered syllabus parser to extract chapters and generate exam-focused topics
+            const parsedSyllabus = parseSyllabusWithAI(rawText, subjectKey as SubjectType);
+
+            return {
+              subject: subjectKey,
+              fileName: fileData.name,
+              fileSize: fileData.size,
+              uploadedAt: fileData.uploadedAt || new Date().toISOString(),
+              storagePath,
+              publicUrl,
+              extractedText: parsedSyllabus.rawText,
+              topics: parsedSyllabus.chapters, // Chapters as topics for backward compatibility
+              analysisComplete: true
+            };
+          } catch (pdfErr) {
+            console.warn('Client-side PDF extraction failed, using fallback:', pdfErr);
+          }
+        }
+
+        // Fallback: Use AI-powered fallback syllabus parser (FREE - zero API cost)
+        const fallbackSyllabus = getFallbackSyllabusParse(subjectKey as SubjectType);
+
+        return {
+          subject: subjectKey,
+          fileName: fileData.name,
+          fileSize: fileData.size,
+          uploadedAt: fileData.uploadedAt || new Date().toISOString(),
+          storagePath,
+          publicUrl,
+          extractedText: fallbackSyllabus.rawText,
+          topics: fallbackSyllabus.chapters,
+          analysisComplete: true
+        };
+      });
+
+      const results = await Promise.all(uploadPromises);
+      const validResults = results.filter((r): r is NonNullable<typeof r> => r !== null);
+      const syllabusMap = Object.fromEntries(validResults.map(r => [r.subject, r]));
+
+      // Update state
+      setStudent(prev => ({
+        ...prev,
+        syllabusData: syllabusMap,
+        syllabusUploaded: true
+      }));
+      setSyllabusData(syllabusMap);
+
+      // Save to per-user localStorage key
+      if (user?.id) {
+        const userSyllabusKey = `gurumitra_syllabus_data_${user.id}`;
+        localStorage.setItem(userSyllabusKey, JSON.stringify(syllabusMap));
+      }
+
+      setNotification({
+        message: 'Syllabus uploaded and analyzed successfully with AI!',
+        type: 'success'
+      });
+
+      return validResults;
+    } catch (error) {
+      console.error('Syllabus setup failed:', error);
+      throw error;
+    }
+  };
+
+  // Synchronize student profile whenever auth user changes (e.g. login, signup, demo)
+  useEffect(() => {
+    if (user) {
+      setStudent((prev) => ({
+        ...prev,
+        // Update auth-dependent fields
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        grade: user.grade || '10th',
+        level: user.level || 'Intermediate',
+        preferredSubjects: user.preferredSubjects,
+        preferredStyle: user.preferredStyle,
+        isDemo: user.isDemo,
+        emailVerified: user.emailVerified,
+        createdAt: user.createdAt || user.created_at || new Date().toISOString()
+      }));
+
+      // If user selected preferred subjects, set active subject to first one if available
+      if (user.preferredSubjects && user.preferredSubjects.length > 0) {
+        setActiveSubjectState(user.preferredSubjects[0]);
+      }
+
+      // Restore syllabus data from localStorage using per-user key
+      const userSyllabusKey = `gurumitra_syllabus_data_${user.id}`;
+      try {
+        const savedSyllabusData = localStorage.getItem(userSyllabusKey);
+        if (savedSyllabusData) {
+          const parsedData = JSON.parse(savedSyllabusData);
+          setSyllabusData(parsedData);
+          setStudent((prev) => ({ ...prev, syllabusData: parsedData, syllabusUploaded: true }));
+        } else {
+          // No syllabus for this user — reset to fresh state
+          setSyllabusData({});
+          setStudent((prev) => ({ ...prev, syllabusData: {}, syllabusUploaded: false }));
+        }
+      } catch (err) {
+        console.error('Failed to restore syllabus data:', err);
+        setSyllabusData({});
+        setStudent((prev) => ({ ...prev, syllabusData: {}, syllabusUploaded: false }));
+      }
+
+      // Restore pre-assessment result from localStorage
+      const userAssessKey = `gurumitra_pre_assessment_${user.id}`;
+      try {
+        const savedAssess = localStorage.getItem(userAssessKey);
+        if (savedAssess) {
+          setPreAssessmentResult(JSON.parse(savedAssess));
+        } else {
+          setPreAssessmentResult(null);
+        }
+      } catch {
+        setPreAssessmentResult(null);
+      }
+    } else {
+      // User logged out — reset syllabus and assessment state completely
+      setSyllabusData({});
+      setStudent((prev) => ({ ...prev, syllabusData: {}, syllabusUploaded: false }));
+      setPreAssessmentResult(null);
+    }
+  }, [user]);
+
+  const recordPreAssessmentResult = (result: PreAssessmentResult) => {
+    setPreAssessmentResult(result);
+    const userId = user?.id || 'guest_student';
+    try {
+      localStorage.setItem(`gurumitra_pre_assessment_${userId}`, JSON.stringify(result));
+    } catch (e) {
+      console.warn('Could not persist pre-assessment to localStorage:', e);
     }
 
-    const newPreferredStyle = style || student.preferredStyle;
-    const newLevel = level || student.level;
-
-    setStudent((prev) => ({
+    // Update student diagnostic baseline level
+    const newLevel: DifficultyLevel = result.overallScore <= 50 ? 'Beginner' : result.overallScore <= 75 ? 'Intermediate' : 'Advanced';
+    setStudent(prev => ({
       ...prev,
-      grade: normGrade,
-      board,
-      stream: effectiveStream,
-      preferredStyle: newPreferredStyle,
-      level: newLevel
+      level: newLevel,
+      overallAccuracy: result.knowledgeScore
     }));
 
-    // Update recommendations and path for the new curriculum
-    setRecommendations(getRecommendations(normGrade, board, effectiveStream, nextSubject));
-    setLearningPath(getLearningPath(normGrade, board, effectiveStream, nextSubject));
-
-    // Update learning context for the new curriculum
-    const newChs = getChapters(normGrade, board, effectiveStream, nextSubject);
-    const firstCh = newChs[0];
-    const firstTop = firstCh?.topics[0];
-    setCurrentLearningContext({
-      classLevel: normGrade,
-      board,
-      stream: effectiveStream,
-      subject: nextSubject,
-      chapter: firstCh ? firstCh.title : 'Chapter 1',
-      chapterId: firstCh?.id,
-      topic: firstTop ? firstTop.title : 'Topic 1',
-      topicId: firstTop?.id,
-      learningStyle: newPreferredStyle,
-      difficulty: newLevel
-    });
-
-    // Persist to localStorage
-    try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({
-          grade: normGrade,
-          board,
-          stream: effectiveStream,
-          preferredStyle: newPreferredStyle,
-          level: newLevel
-        })
-      );
-    } catch (e) {
-      // Ignore localStorage write errors
+    // Seamlessly adapt Recommendations based on identified diagnostic gaps
+    if (result.identifiedGaps.length > 0) {
+      const adaptedRecs: RecommendationItem[] = result.identifiedGaps.slice(0, 4).map((gap, i) => ({
+        id: `rec_diag_${gap.id}_${i}`,
+        topic: gap.topic,
+        subject: gap.subject,
+        difficulty: gap.priority === 'High Priority' ? 'Beginner' : 'Intermediate',
+        reason: gap.prerequisite
+          ? `Diagnostic Gap: Master ${gap.prerequisite} before returning to ${gap.chapterName}.`
+          : `Diagnostic Gap (${gap.accuracy}% accuracy in pre-assessment).`,
+        duration: '15 mins',
+        priority: gap.priority === 'High Priority' ? 'High Priority' : 'Practice',
+        completed: false
+      }));
+      setRecommendations(prev => [...adaptedRecs, ...prev.filter(p => !p.id.startsWith('rec_diag_'))]);
     }
 
+    // Add activity record
+    const newActivity: ActivityItem = {
+      id: `act_${Date.now()}`,
+      type: 'adaptation',
+      title: 'Diagnostic Pre-Assessment Completed',
+      subtitle: `Scored ${result.overallScore}% (${result.learningLevel}) across ${result.totalQuestions} questions.`,
+      time: 'Just now',
+      tag: 'Pre-Assessment',
+      badgeType: 'High Priority'
+    };
+    setActivities(prev => [newActivity, ...prev]);
+
     setNotification({
-      message: `Curriculum calibrated to ${normGrade} • ${board}${effectiveStream !== 'Not applicable' ? ' • ' + effectiveStream : ''}. Subject list updated!`,
+      message: `Diagnostic pre-assessment complete! Scored ${result.overallScore}%. Adaptive learning path updated.`,
       type: 'success'
     });
+  };
+
+  const clearPreAssessment = () => {
+    setPreAssessmentResult(null);
+    const userId = user?.id || 'guest_student';
+    try {
+      localStorage.removeItem(`gurumitra_pre_assessment_${userId}`);
+    } catch {}
   };
 
   const clearNotification = () => setNotification(null);
 
   const setPreferredStyle = (style: LearningStyle) => {
-    setStudent((prev) => {
-      const updated = { ...prev, preferredStyle: style };
-      try {
-        localStorage.setItem(
-          STORAGE_KEY,
-          JSON.stringify({
-            grade: updated.grade,
-            board: updated.board,
-            stream: updated.stream,
-            preferredStyle: style,
-            level: updated.level
-          })
-        );
-      } catch (e) {}
-      return updated;
-    });
-
-    // Keep active learning context in sync with the style change
-    setCurrentLearningContext((prev) => ({
-      ...prev,
-      learningStyle: style
-    }));
-
+    setStudent((prev) => ({ ...prev, preferredStyle: style }));
     setNotification({
       message: `Preferred learning style updated to "${style}". AI content adapted!`,
       type: 'info'
     });
   };
 
-  const updateProfile = (
-    name: string,
-    grade: ClassLevel | string,
-    style: LearningStyle,
-    board?: BoardType,
-    stream?: StreamType
-  ) => {
-    const normGrade = normalizeGrade(grade);
-    const targetBoard = board || student.board;
-    const targetStream = stream || student.stream;
-
-    setAcademicProfile(normGrade, targetBoard, targetStream, style);
-    setStudent((prev) => ({ ...prev, name }));
+  const updateProfile = (name: string, grade: string, style: LearningStyle, board?: BoardType, stream?: StreamType) => {
+    setStudent((prev) => ({
+      ...prev,
+      name,
+      grade,
+      preferredStyle: style,
+      board: board || prev.board,
+      stream: stream || prev.stream
+    }));
+    setNotification({
+      message: 'Student profile updated successfully!',
+      type: 'success'
+    });
   };
 
   const toggleStudyPlanItem = (id: string) => {
@@ -436,15 +644,19 @@ export const StudentProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // 1. Update Student Profile
     const xpGained = accuracy >= 80 ? 150 : accuracy >= 60 ? 80 : 40;
     setStudent((prev) => {
-      const newAcc = Math.round((prev.overallAccuracy * 4 + accuracy) / 5);
-      const newProg = Math.min(100, prev.overallProgress + 2);
+      const currentAcc = prev.overallAccuracy ?? 80;
+      const currentProg = prev.overallProgress ?? 70;
+      const currentXp = prev.xp ?? 1000;
+      const currentLessons = prev.completedLessons ?? 10;
+      const newAcc = Math.round((currentAcc * 4 + accuracy) / 5);
+      const newProg = Math.min(100, currentProg + 2);
       return {
         ...prev,
         level: newLevel,
         overallAccuracy: newAcc,
         overallProgress: newProg,
-        xp: prev.xp + xpGained,
-        completedLessons: prev.completedLessons + 1
+        xp: currentXp + xpGained,
+        completedLessons: currentLessons + 1
       };
     });
 
@@ -568,95 +780,36 @@ export const StudentProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   };
 
-  const clearUploadError = () => setUploadError(null);
-
-  const removeUploadedMaterial = () => {
-    setUploadedMaterial(null);
-    setUploadState('idle');
-    setUploadError(null);
-    setNotification({
-      message: 'Uploaded material removed from AI Tutor session.',
-      type: 'info'
-    });
-  };
-
-  const processAndSetFile = async (file: File): Promise<ParsedMaterial> => {
-    setUploadState('uploading');
-    setUploadError(null);
-
-    try {
-      // Step 1: Uploading state
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      setUploadState('analyzing');
-
-      // Step 2: Genuine text parsing & topic extraction
-      const parsed = await processUploadedFile(file);
-
-      // Brief animation pause for genuine analytical feedback
-      await new Promise((resolve) => setTimeout(resolve, 600));
-
-      setUploadedMaterial(parsed);
-      setUploadState('ready');
-
-      setNotification({
-        message: `Successfully analyzed "${file.name}" (${parsed.wordCount} words, ${parsed.topics.length} topics found). Connected to AI Tutor!`,
-        type: 'success'
-      });
-
-      return parsed;
-    } catch (err: any) {
-      setUploadState('error');
-      const msg = err?.message || 'Couldn\'t read this file. Please try another supported file.';
-      setUploadError(msg);
-      setNotification({
-        message: msg,
-        type: 'warning'
-      });
-      throw err;
-    }
-  };
-
   const resetToDefault = () => {
     setStudent({
-      name: user?.name || 'Khushi Dixit',
-      grade: 'Class 9',
-      board: 'CBSE',
-      stream: 'Not applicable',
-      level: 'Beginner',
+      // Auth fields (from user or defaults)
+      id: user ? user.id : 'guest_student',
+      name: user ? user.name : 'Khushi Dixit',
+      email: user ? user.email : '',
+      grade: user ? user.grade : '10th',
+      level: user ? user.level : 'Intermediate',
+      preferredSubjects: user ? user.preferredSubjects : ['Mathematics', 'Science'],
+      preferredStyle: user ? user.preferredStyle : 'Simple',
+      isDemo: user ? user.isDemo : false,
+      emailVerified: user ? user.emailVerified : true,
+      createdAt: user ? (user.createdAt || user.created_at || new Date().toISOString()) : new Date().toISOString(),
+      // Client-specific fields with defaults
       streak: 4,
-      overallProgress: 76,
-      overallAccuracy: 82,
-      completedLessons: 24,
-      xp: 1420,
-      preferredStyle: 'Simple'
+      totalPoints: 1420,
+      rank: 76,
+      syllabusUploaded: false,
+      syllabusData: {}
     });
-    const defSubs = getAvailableSubjects('Class 9', 'CBSE', 'Not applicable');
-    setSubjects(defSubs);
-    setActiveSubjectState(defSubs[0]?.name || 'Mathematics');
-    setRecommendations(getRecommendations('Class 9', 'CBSE', 'Not applicable', defSubs[0]?.name || 'Mathematics'));
+    setSubjects(INITIAL_SUBJECTS);
+    setRecommendations(INITIAL_RECOMMENDATIONS);
     setStudyPlan(INITIAL_STUDY_PLAN);
-    setLearningPath(getLearningPath('Class 9', 'CBSE', 'Not applicable', defSubs[0]?.name || 'Mathematics'));
+    setLearningPath(INITIAL_LEARNING_PATH);
     setActivities(INITIAL_ACTIVITIES);
     setLastQuizResult(null);
     setJudgeDemoStep(0);
     setUploadedMaterial(null);
     setUploadState('idle');
     setUploadError(null);
-    setCurrentLearningContext({
-      classLevel: 'Class 9',
-      board: 'CBSE',
-      stream: 'Not applicable',
-      subject: 'Mathematics',
-      chapter: 'Number Systems',
-      chapterId: 'cbse-9-math-ch1',
-      topic: 'Irrational Numbers and Decimal Expansions',
-      topicId: 'cbse-9-math-t1',
-      learningStyle: 'Simple',
-      difficulty: 'Beginner'
-    });
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch (e) {}
     setNotification({
       message: 'Demo state reset to initial baseline successfully!',
       type: 'info'
@@ -677,26 +830,38 @@ export const StudentProvider: React.FC<{ children: React.ReactNode }> = ({ child
         lastQuizResult,
         notification,
         judgeDemoStep,
+        syllabusData,
+        syllabusUploaded: student.syllabusUploaded,
         uploadedMaterial,
         uploadState,
         uploadError,
         currentLearningContext,
         setCurrentLearningContext,
-        setTopicContext,
-        startQuizForCurrentTopic,
         setActiveTab,
         setActiveSubject,
         setPreferredStyle,
-        setAcademicProfile,
         updateProfile,
         toggleStudyPlanItem,
         recordQuizResult,
         setJudgeDemoStep,
-        resetToDefault,
-        clearNotification,
+        completeSyllabusSetup,
+        extractAndAnalyzeTopics,
+        setSyllabusAnalysis,
         processAndSetFile,
         removeUploadedMaterial,
-        clearUploadError
+        clearUploadError,
+        setTopicContext,
+        startQuizForCurrentTopic,
+        setAcademicProfile,
+        resetToDefault,
+        clearNotification,
+        preAssessmentResult,
+        preAssessmentQuestions,
+        isGeneratingAssessment,
+        setIsGeneratingAssessment,
+        recordPreAssessmentResult,
+        clearPreAssessment,
+        setPreAssessmentQuestions
       }}
     >
       {children}

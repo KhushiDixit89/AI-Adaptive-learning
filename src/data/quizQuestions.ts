@@ -7,8 +7,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
   {
     id: 'math-num-1',
     subject: 'Mathematics',
-    chapter: 'Number Systems',
-    topic: 'Irrational Numbers and Decimal Expansions',
+        topic: 'Irrational Numbers and Decimal Expansions',
     classLevel: 'Class 9',
     board: 'CBSE',
     difficulty: 'Beginner',
@@ -21,8 +20,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
   {
     id: 'math-num-2',
     subject: 'Mathematics',
-    chapter: 'Number Systems',
-    topic: 'Irrational Numbers and Decimal Expansions',
+        topic: 'Irrational Numbers and Decimal Expansions',
     classLevel: 'Class 9',
     board: 'CBSE',
     difficulty: 'Beginner',
@@ -40,8 +38,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
   {
     id: 'math-num-3',
     subject: 'Mathematics',
-    chapter: 'Number Systems',
-    topic: 'Irrational Numbers and Decimal Expansions',
+        topic: 'Irrational Numbers and Decimal Expansions',
     classLevel: 'Class 9',
     board: 'CBSE',
     difficulty: 'Intermediate',
@@ -54,8 +51,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
   {
     id: 'math-num-4',
     subject: 'Mathematics',
-    chapter: 'Number Systems',
-    topic: 'Irrational Numbers and Decimal Expansions',
+        topic: 'Irrational Numbers and Decimal Expansions',
     classLevel: 'Class 9',
     board: 'CBSE',
     difficulty: 'Intermediate',
@@ -68,8 +64,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
   {
     id: 'math-num-5',
     subject: 'Mathematics',
-    chapter: 'Number Systems',
-    topic: 'Irrational Numbers and Decimal Expansions',
+        topic: 'Irrational Numbers and Decimal Expansions',
     classLevel: 'Class 9',
     board: 'CBSE',
     difficulty: 'Intermediate',
@@ -87,8 +82,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
   {
     id: 'math-num-6',
     subject: 'Mathematics',
-    chapter: 'Number Systems',
-    topic: 'Rationalisation of Denominators',
+        topic: 'Rationalisation of Denominators',
     classLevel: 'Class 9',
     board: 'CBSE',
     difficulty: 'Intermediate',
@@ -106,8 +100,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
   {
     id: 'math-num-7',
     subject: 'Mathematics',
-    chapter: 'Number Systems',
-    topic: 'Irrational Numbers and Decimal Expansions',
+        topic: 'Irrational Numbers and Decimal Expansions',
     classLevel: 'Class 9',
     board: 'CBSE',
     difficulty: 'Intermediate',
