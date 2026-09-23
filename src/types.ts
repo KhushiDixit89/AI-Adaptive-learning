@@ -365,6 +365,34 @@ export interface ExtractedChapter {
   pageNumber?: number;
   pageRange?: { startPage: number; endPage?: number };
   sourceMethod?: 'table_of_contents' | 'heading_detection' | 'document_structure';
+  contentSlice?: string;
+}
+
+export interface ChapterContentBoundary {
+  chapterId: string;
+  chapterName: string;
+  subject: SubjectType;
+  startOffset: number;
+  endOffset: number;
+  pageRange?: { startPage: number; endPage?: number };
+  topics: string[];
+  contentSlice: string;
+}
+
+export interface AllowedContentMap {
+  selectedSubjects: SubjectType[];
+  allowedChapters: ExtractedChapter[];
+  allowedTopics: {
+    topic: string;
+    chapterName: string;
+    subject: SubjectType;
+  }[];
+  chapterBoundaries?: Record<string, ChapterContentBoundary>;
+}
+
+export interface QuestionValidationResult {
+  valid: boolean;
+  reasons: string[];
 }
 
 export interface PreAssessmentQuestion {
@@ -499,4 +527,16 @@ export interface PreAssessmentResult {
   };
   isDemoMode?: boolean;
   createdAt: string;
+}
+
+export interface ChapterQuestionAllocation {
+  chapterId: string;
+  chapterName: string;
+  subject: SubjectType;
+  topics: string[];
+  totalQuestions?: number;
+  totalCount: number;
+  easyCount: number;
+  moderateCount: number;
+  difficultCount: number;
 }

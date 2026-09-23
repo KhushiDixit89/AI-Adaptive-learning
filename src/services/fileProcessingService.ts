@@ -2,6 +2,7 @@ import mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.js?url';
 import { ParsedMaterial } from '../types';
+import { reconstructPageTextFromItems } from '../utils/pdfExtractor';
 
 if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions) {
   pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
@@ -143,11 +144,8 @@ export async function extractTextFromFile(file: File): Promise<string> {
       for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
         const page = await pdf.getPage(pageNum);
         const textContent = await page.getTextContent();
-        const pageText = textContent.items
-          .map((item: any) => (item as any)?.str || '')
-          .join(' ')
-          .trim();
-        if (pageText) {
+        const { text: pageText } = reconstructPageTextFromItems(textContent.items as any[]);
+        if (pageText.trim()) {
           extractedPages.push(`[Section / Page ${pageNum}]\n${pageText}`);
         }
       }

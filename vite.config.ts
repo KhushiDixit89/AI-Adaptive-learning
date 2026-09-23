@@ -55,18 +55,94 @@ export default defineConfig(({ mode }) => {
                     disableFontFace: true
                   });
                   const pdf = await loadingTask.promise;
-                  const extractedPages: { pageNumber: number; text: string }[] = [];
+                  const extractedPages: { pageNumber: number; text: string; lines: string[] }[] = [];
                   const totalPages = Math.min(pdf.numPages, 100);
+
+                  function reconstructPageLines(items: any[]): { text: string; lines: string[] } {
+                    if (!items || items.length === 0) return { text: '', lines: [] };
+                    const valid: any[] = [];
+                    for (const item of items) {
+                      if (typeof item?.str !== 'string') continue;
+                      if (!item.str && item.str !== ' ') continue;
+                      const transform = item.transform || [1, 0, 0, 1, 0, 0];
+                      const x = transform[4] || 0;
+                      const y = transform[5] || 0;
+                      const height = Math.abs(transform[3]) || 12;
+                      const width = item.width || (item.str.length * (height * 0.5));
+                      valid.push({ str: item.str, x, y, width, height });
+                    }
+                    if (valid.length === 0) return { text: '', lines: [] };
+
+                    valid.sort((a, b) => {
+                      if (Math.abs(b.y - a.y) > 3) return b.y - a.y;
+                      return a.x - b.x;
+                    });
+
+                    const lineClusters: any[][] = [];
+                    let currentCluster: any[] = [];
+                    let currentY: number | null = null;
+                    for (const item of valid) {
+                      if (currentY === null) {
+                        currentCluster = [item];
+                        currentY = item.y;
+                      } else if (Math.abs(item.y - currentY) <= 3.5) {
+                        currentCluster.push(item);
+                        currentY = (currentY * (currentCluster.length - 1) + item.y) / currentCluster.length;
+                      } else {
+                        lineClusters.push(currentCluster);
+                        currentCluster = [item];
+                        currentY = item.y;
+                      }
+                    }
+                    if (currentCluster.length > 0) lineClusters.push(currentCluster);
+
+                    const lines: string[] = [];
+                    let prevLineY: number | null = null;
+                    let prevHeight = 12;
+
+                    for (const cluster of lineClusters) {
+                      cluster.sort((a, b) => a.x - b.x);
+                      let lineStr = '';
+                      let prevEnd: number | null = null;
+                      for (const item of cluster) {
+                        if (item.str === '') continue;
+                        if (prevEnd !== null) {
+                          const gap = item.x - prevEnd;
+                          if (gap > 1.8 && !lineStr.endsWith(' ') && !item.str.startsWith(' ')) {
+                            lineStr += ' ';
+                          }
+                        }
+                        lineStr += item.str;
+                        prevEnd = item.x + item.width;
+                      }
+                      const trimmed = lineStr.trim();
+                      if (!trimmed) continue;
+                      if (/^(?:page\s*)?\d+(?:\s*(?:of|\/)\s*\d+)?$/i.test(trimmed) && cluster[0].y < 45) continue;
+
+                      const avgY = cluster.reduce((sum: number, it: any) => sum + it.y, 0) / cluster.length;
+                      const avgH = cluster.reduce((sum: number, it: any) => sum + it.height, 0) / cluster.length || prevHeight;
+                      if (prevLineY !== null) {
+                        const vGap = prevLineY - avgY;
+                        if (vGap > avgH * 1.85 && lines.length > 0) {
+                          lines.push('');
+                        }
+                      }
+                      lines.push(trimmed);
+                      prevLineY = avgY;
+                      prevHeight = avgH;
+                    }
+                    return {
+                      text: lines.join('\n'),
+                      lines: lines.filter(l => l.length > 0)
+                    };
+                  }
 
                   for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
                     const page = await pdf.getPage(pageNum);
                     const textContent = await page.getTextContent();
-                    const pageText = textContent.items
-                      .map((item: any) => (item?.str || ''))
-                      .join(' ')
-                      .trim();
-                    if (pageText) {
-                      extractedPages.push({ pageNumber: pageNum, text: pageText });
+                    const { text: pageText, lines: pageLines } = reconstructPageLines(textContent.items as any[]);
+                    if (pageText.trim()) {
+                      extractedPages.push({ pageNumber: pageNum, text: pageText, lines: pageLines });
                     }
                   }
 
@@ -75,7 +151,8 @@ export default defineConfig(({ mode }) => {
                     success: true,
                     totalPages: pdf.numPages,
                     extractedPagesCount: extractedPages.length,
-                    text: fullText
+                    text: fullText,
+                    pages: extractedPages
                   });
                 } catch (pdfErr: any) {
                   console.error('Server-side PDF extraction error:', pdfErr);
@@ -83,17 +160,93 @@ export default defineConfig(({ mode }) => {
                 }
               }
 
-              // 1. Check if API key is present
-              if (!geminiApiKey) {
+              const clientHeaderApiKey = (req.headers['x-gemini-api-key'] as string) || '';
+
+              // Endpoint: /api/ai/check-status
+              if (req.url.startsWith('/api/ai/check-status') && req.method === 'GET') {
+                const effectiveKey = clientHeaderApiKey || geminiApiKey;
+                if (!effectiveKey) {
+                  return sendJson(200, {
+                    configured: false,
+                    valid: false,
+                    status: 'not_configured',
+                    source: 'none',
+                    message: 'No Gemini API key provided. Using offline NCERT curriculum engine.'
+                  });
+                }
+
+                const urlObj = new URL(req.url, 'http://localhost');
+                const shouldValidate = urlObj.searchParams.get('validate') === 'true';
+
+                if (shouldValidate) {
+                  try {
+                    const testUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash?key=${effectiveKey}`;
+                    const testRes = await fetch(testUrl);
+                    if (testRes.ok) {
+                      return sendJson(200, {
+                        configured: true,
+                        valid: true,
+                        status: 'active',
+                        source: clientHeaderApiKey ? 'client' : (geminiApiKey ? 'server' : 'none'),
+                        model: geminiModel || 'gemini-1.5-flash',
+                        message: 'API Key is Active & Valid! Successfully connected to Google Gemini.'
+                      });
+                    } else if (testRes.status === 400 || testRes.status === 403) {
+                      const errData = await testRes.json().catch(() => null);
+                      const detailMsg = errData?.error?.message || 'API key not valid or expired';
+                      return sendJson(200, {
+                        configured: false,
+                        valid: false,
+                        status: 'invalid_or_expired',
+                        source: clientHeaderApiKey ? 'client' : (geminiApiKey ? 'server' : 'none'),
+                        message: `Key Expired/Invalid: ${detailMsg}. Please generate a new key on Google AI Studio.`
+                      });
+                    } else if (testRes.status === 429) {
+                      return sendJson(200, {
+                        configured: true,
+                        valid: false,
+                        status: 'quota_exceeded',
+                        source: clientHeaderApiKey ? 'client' : (geminiApiKey ? 'server' : 'none'),
+                        message: 'Quota Exceeded: Your Google Gemini free tier rate limit was reached. Quota resets daily.'
+                      });
+                    } else {
+                      return sendJson(200, {
+                        configured: true,
+                        valid: false,
+                        status: 'error',
+                        message: `Google Gemini responded with HTTP status ${testRes.status}.`
+                      });
+                    }
+                  } catch (netErr: any) {
+                    return sendJson(200, {
+                      configured: true,
+                      valid: false,
+                      status: 'network_error',
+                      message: `Network error connecting to Gemini API: ${netErr?.message || 'Unknown network error'}`
+                    });
+                  }
+                }
+
                 return sendJson(200, {
-                  isDemoMode: true,
-                  message: 'GEMINI_API_KEY not configured. Running in Demo Mode.'
+                  configured: true,
+                  source: clientHeaderApiKey ? 'client' : (geminiApiKey ? 'server' : 'none'),
+                  model: geminiModel || 'gemini-1.5-flash'
                 });
               }
 
               // Endpoint: /api/ai/extract-chapters
               if (req.url === '/api/ai/extract-chapters' && req.method === 'POST') {
                 const body = await readBody();
+                const effectiveApiKey = clientHeaderApiKey || body.apiKey || geminiApiKey;
+                const effectiveModel = body.model || geminiModel || 'gemini-1.5-flash';
+
+                if (!effectiveApiKey) {
+                  return sendJson(200, {
+                    isDemoMode: true,
+                    message: 'GEMINI_API_KEY not configured. Running in Demo Mode.'
+                  });
+                }
+
                 const { text, subject, classLevel } = body;
 
                 if (!text || text.trim().length < 15) {
@@ -128,7 +281,7 @@ Return ONLY a valid JSON object matching this schema:
 Document Text to analyze (up to 12000 chars):
 ${text.slice(0, 12000)}`;
 
-                const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`;
+                const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${effectiveModel}:generateContent?key=${effectiveApiKey}`;
                 const apiRes = await fetch(geminiUrl, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -160,6 +313,16 @@ ${text.slice(0, 12000)}`;
               // Endpoint: /api/ai/generate-questions
               if (req.url === '/api/ai/generate-questions' && req.method === 'POST') {
                 const body = await readBody();
+                const effectiveApiKey = clientHeaderApiKey || body.apiKey || geminiApiKey;
+                const effectiveModel = body.model || geminiModel || 'gemini-1.5-flash';
+
+                if (!effectiveApiKey) {
+                  return sendJson(200, {
+                    isDemoMode: true,
+                    message: 'GEMINI_API_KEY not configured. Running in Demo Mode.'
+                  });
+                }
+
                 const { chapters, subject, classLevel, chapterAllocations, targetTotalQuestions = 30 } = body;
 
                 if (!chapters || !Array.isArray(chapters) || chapters.length === 0) {
@@ -231,10 +394,11 @@ Return ONLY a valid JSON object matching this schema:
       "correctOption": 1,
       "explanation": "...",
       "sourcePage": 1
+    }
   ]
 }`;
 
-                const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`;
+                const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${effectiveModel}:generateContent?key=${effectiveApiKey}`;
                 const apiRes = await fetch(geminiUrl, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -266,6 +430,16 @@ Return ONLY a valid JSON object matching this schema:
               // Endpoint: /api/ai/recommendation
               if (req.url === '/api/ai/recommendation' && req.method === 'POST') {
                 const body = await readBody();
+                const effectiveApiKey = clientHeaderApiKey || body.apiKey || geminiApiKey;
+                const effectiveModel = body.model || geminiModel || 'gemini-1.5-flash';
+
+                if (!effectiveApiKey) {
+                  return sendJson(200, {
+                    isDemoMode: true,
+                    message: 'GEMINI_API_KEY not configured. Running in Demo Mode.'
+                  });
+                }
+
                 const { summary } = body;
 
                 const prompt = `You are GuruMitra's AI Learning Advisor for school students.
@@ -283,9 +457,9 @@ Return ONLY a valid JSON object matching this schema:
     "Step 2: Specific practice recommendation",
     "Step 3: Target reassessment milestone"
   ]
-}`;
+}Generic rules: avoid generic fluff, be specific to the student's assessed performance.`;
 
-                const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`;
+                const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${effectiveModel}:generateContent?key=${effectiveApiKey}`;
                 const apiRes = await fetch(geminiUrl, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },

@@ -14,6 +14,8 @@ import {
   MessageSquareQuote
 } from 'lucide-react';
 import { useStudent } from '../context/StudentContext';
+import { getStoredGeminiKey } from '../services/preAssessmentService';
+import { AiModelConfigModal } from './AiModelConfigModal';
 
 export const UploadMaterialView: React.FC = () => {
   const {
@@ -30,6 +32,8 @@ export const UploadMaterialView: React.FC = () => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [expandedTopic, setExpandedTopic] = useState<number | null>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [hasGeminiKey, setHasGeminiKey] = useState<boolean>(() => !!getStoredGeminiKey());
 
   const isAnalyzing = uploadState === 'uploading' || uploadState === 'analyzing';
   const isAnalyzed = uploadState === 'ready' && !!uploadedMaterial;
@@ -104,12 +108,45 @@ export const UploadMaterialView: React.FC = () => {
           </p>
         </div>
 
-        {(isAnalyzed || uploadState === 'error') && (
-          <button onClick={handleReset} className="btn btn-outline" style={{ padding: '8px 14px', fontSize: '0.82rem' }}>
-            <RotateCcw size={14} />
-            <span>Upload Another File</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => setIsAiModalOpen(true)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 14px',
+              borderRadius: '999px',
+              border: hasGeminiKey ? '1.5px solid #10B981' : '1.5px solid #C7D2FE',
+              backgroundColor: hasGeminiKey ? '#ECFDF5' : '#FFFFFF',
+              color: hasGeminiKey ? '#065F46' : '#4F46E5',
+              fontSize: '0.8rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <span style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              backgroundColor: hasGeminiKey ? '#10B981' : '#6366F1',
+              boxShadow: hasGeminiKey ? '0 0 8px rgba(16, 185, 129, 0.7)' : 'none',
+              display: 'inline-block'
+            }} />
+            <span>{hasGeminiKey ? 'Gemini AI Active' : 'Curriculum Engine Active'}</span>
+            <span style={{ fontSize: '0.72rem', color: '#64748B', fontWeight: 600 }}>• Settings</span>
           </button>
-        )}
+
+          {(isAnalyzed || uploadState === 'error') && (
+            <button onClick={handleReset} className="btn btn-outline" style={{ padding: '8px 14px', fontSize: '0.82rem' }}>
+              <RotateCcw size={14} />
+              <span>Upload Another File</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Error state if file processing failed */}
@@ -504,6 +541,13 @@ export const UploadMaterialView: React.FC = () => {
           </div>
         )
       )}
+
+      {/* AI Model Settings Modal */}
+      <AiModelConfigModal
+        isOpen={isAiModalOpen}
+        onClose={() => setIsAiModalOpen(false)}
+        onKeyUpdated={(has) => setHasGeminiKey(has)}
+      />
     </div>
   );
 };
