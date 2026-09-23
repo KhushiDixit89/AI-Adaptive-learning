@@ -17,6 +17,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { useStudent } from '../context/StudentContext';
+import { determineStudentPace } from '../services/quizEngine';
 
 export const AnalyticsView: React.FC = () => {
   const { student, subjects, activities, lastQuizResult, setActiveTab, startQuizForCurrentTopic } = useStudent();
@@ -41,6 +42,8 @@ export const AnalyticsView: React.FC = () => {
     { subject: 'Social Studies', benchmark: '24s', category: 'Factual Recall', color: '#EC4899', icon: '🌍' },
   ];
 
+  const studentPace = determineStudentPace(student, lastQuizResult);
+
   const timedAnalytics = lastQuizResult?.timedQuizAnalytics;
   const avgResponseTimeDisplay = timedAnalytics
     ? `${Math.round(timedAnalytics.averageResponseTime)}s / question`
@@ -50,21 +53,19 @@ export const AnalyticsView: React.FC = () => {
     ? `${lastQuizResult.accuracy}%`
     : `${student.overallAccuracy}%`;
 
-  const paceLabel = timedAnalytics
-    ? timedAnalytics.speedCategory === 'fast'
-      ? 'Rapid & Fluent'
-      : timedAnalytics.speedCategory === 'moderate'
-        ? 'Steady & Balanced'
-        : 'Deliberate & Thorough'
-    : 'Steady & Balanced';
+  const paceLabel =
+    studentPace === 'Fast'
+      ? 'Rapid & Fluent (Fast)'
+      : studentPace === 'Needs More Time'
+      ? 'Deliberate & Thorough (Needs More Time)'
+      : 'Steady & Balanced (Normal)';
 
-  const paceColor = timedAnalytics
-    ? timedAnalytics.speedCategory === 'fast'
+  const paceColor =
+    studentPace === 'Fast'
       ? '#059669'
-      : timedAnalytics.speedCategory === 'moderate'
-        ? '#4F46E5'
-        : '#D97706'
-    : '#4F46E5';
+      : studentPace === 'Needs More Time'
+      ? '#D97706'
+      : '#4F46E5';
 
   return (
     <div style={{

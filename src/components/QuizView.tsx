@@ -32,6 +32,7 @@ import {
   TimedQuizAnalytics
 } from '../types';
 import { getQuizQuestions, getChapters } from '../services/curriculumService';
+import { calculateAdaptiveQuizTimer, determineStudentPace } from '../services/quizEngine';
 
 export const QuizView: React.FC = () => {
   const {
@@ -53,14 +54,21 @@ export const QuizView: React.FC = () => {
     student.level
   );
 
+  const studentPace = determineStudentPace(student, lastQuizResult);
+  const adaptiveTimerConfig = calculateAdaptiveQuizTimer(
+    currentLearningContext,
+    questionsToUse.length,
+    student,
+    lastQuizResult
+  );
+
   // Mode and Timer configuration
   const [quizMode, setQuizMode] = useState<QuizMode>('practice');
   const [isTimerEnabled, setIsTimerEnabled] = useState<boolean>(true);
   
-  // Timer durations: default 60s per question or min 300s (5 mins)
-  const defaultTimeLimit = Math.max(300, questionsToUse.length * 60);
-  const [totalTimeLimit, setTotalTimeLimit] = useState<number>(defaultTimeLimit);
-  const [timeRemaining, setTimeRemaining] = useState<number>(defaultTimeLimit);
+  // Adaptive timer durations dynamically derived from grade, subject, difficulty, and student pace
+  const [totalTimeLimit, setTotalTimeLimit] = useState<number>(adaptiveTimerConfig.totalSeconds);
+  const [timeRemaining, setTimeRemaining] = useState<number>(adaptiveTimerConfig.totalSeconds);
   const [isAutoSubmitted, setIsAutoSubmitted] = useState<boolean>(false);
 
   // Question navigation and response tracking
@@ -79,9 +87,14 @@ export const QuizView: React.FC = () => {
 
   // Reset quiz states whenever topic, subject, or questions change
   useEffect(() => {
-    const newLimit = Math.max(300, questionsToUse.length * 60);
-    setTotalTimeLimit(newLimit);
-    setTimeRemaining(newLimit);
+    const config = calculateAdaptiveQuizTimer(
+      currentLearningContext,
+      questionsToUse.length,
+      student,
+      lastQuizResult
+    );
+    setTotalTimeLimit(config.totalSeconds);
+    setTimeRemaining(config.totalSeconds);
     setCurrentQIndex(0);
     setSelectedOption(null);
     setQuestionLogs([]);
@@ -93,6 +106,7 @@ export const QuizView: React.FC = () => {
     activeSubject,
     currentLearningContext.chapter,
     currentLearningContext.topic,
+    currentLearningContext.difficulty,
     student.grade,
     student.board,
     student.stream,
@@ -484,9 +498,14 @@ export const QuizView: React.FC = () => {
   };
 
   const handleRestart = () => {
-    const newLimit = Math.max(300, questionsToUse.length * 60);
-    setTotalTimeLimit(newLimit);
-    setTimeRemaining(newLimit);
+    const config = calculateAdaptiveQuizTimer(
+      currentLearningContext,
+      questionsToUse.length,
+      student,
+      lastQuizResult
+    );
+    setTotalTimeLimit(config.totalSeconds);
+    setTimeRemaining(config.totalSeconds);
     setCurrentQIndex(0);
     setSelectedOption(null);
     setQuestionLogs([]);
@@ -918,12 +937,25 @@ export const QuizView: React.FC = () => {
         gap: '16px'
       }}>
         <div>
-          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#4F46E5', textTransform: 'uppercase' }}>
-            {quizMode === 'exam' ? '⏱️ Exam Challenge' : 'Practice Quiz'} • {activeSubject}{' '}
-            {currentLearningContext.chapter ? `• ${currentLearningContext.chapter}` : ''}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#4F46E5', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              {quizMode === 'exam' ? '⏱️ Exam Challenge' : 'Practice Quiz'} • {currentLearningContext.classLevel || student.grade} • {currentLearningContext.board || student.board}
+            </span>
+            <span style={{ fontSize: '0.78rem', color: '#94A3B8' }}>•</span>
+            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#64748B' }}>
+              {activeSubject}
+            </span>
+            {currentLearningContext.chapter && (
+              <>
+                <span style={{ fontSize: '0.78rem', color: '#94A3B8' }}>•</span>
+                <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#64748B' }}>
+                  {currentLearningContext.chapter}
+                </span>
+              </>
+            )}
+          </div>
           <h1 style={{ fontSize: '1.55rem', fontWeight: 800, color: '#1E293B', margin: '2px 0 0' }}>
-            Quiz: {currentLearningContext.topic || currentQ.topic}
+            Quiz: {currentLearningContext.topic || currentQ?.topic || activeSubject}
           </h1>
         </div>
 
@@ -1006,20 +1038,31 @@ export const QuizView: React.FC = () => {
           {(quizMode === 'exam' || isTimerEnabled) && (
             <div style={{
               display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '6px 16px',
-              borderRadius: '999px',
-              backgroundColor: isUrgent ? '#FEE2E2' : isWarning ? '#FEF3C7' : '#EEF2FF',
-              border: isUrgent ? '1.5px solid #FCA5A5' : isWarning ? '1.5px solid #FCD34D' : '1.5px solid #C7D2FE',
-              color: isUrgent ? '#DC2626' : isWarning ? '#D97706' : '#4F46E5',
-              fontWeight: 800,
-              fontSize: '0.92rem',
-              animation: isUrgent ? 'pulse 1s infinite' : 'none'
+              flexDirection: 'column',
+              alignItems: 'flex-end',
+              gap: '4px'
             }}>
-              <Timer size={16} />
-              <span>TIME LEFT: {formatTime(timeRemaining)}</span>
-              {isUrgent && <span style={{ fontSize: '0.72rem', textTransform: 'uppercase' }}>(Hurry!)</span>}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 16px',
+                borderRadius: '999px',
+                backgroundColor: isUrgent ? '#FEE2E2' : isWarning ? '#FEF3C7' : '#EEF2FF',
+                border: isUrgent ? '1.5px solid #FCA5A5' : isWarning ? '1.5px solid #FCD34D' : '1.5px solid #C7D2FE',
+                color: isUrgent ? '#DC2626' : isWarning ? '#D97706' : '#4F46E5',
+                fontWeight: 800,
+                fontSize: '0.92rem',
+                boxShadow: isUrgent ? '0 0 12px rgba(220, 38, 38, 0.25)' : 'none',
+                animation: isUrgent ? 'pulse 1s infinite' : 'none'
+              }}>
+                <Timer size={16} />
+                <span>TIME LEFT: {formatTime(timeRemaining)}</span>
+                {isUrgent && <span style={{ fontSize: '0.72rem', textTransform: 'uppercase' }}>(Hurry!)</span>}
+              </div>
+              <span style={{ fontSize: '0.70rem', color: '#64748B', fontWeight: 600 }}>
+                Adaptive: {adaptiveTimerConfig.secondsPerQuestion}s/q • Pace: {studentPace}
+              </span>
             </div>
           )}
 
@@ -1065,7 +1108,7 @@ export const QuizView: React.FC = () => {
 
         {/* Options List */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '28px' }}>
-          {currentQ.options.map((opt, index) => {
+          {currentQ.options.map((opt: string, index: number) => {
             const isSelected = selectedOption === index;
             const letter = ['A', 'B', 'C', 'D'][index];
 
@@ -1073,6 +1116,7 @@ export const QuizView: React.FC = () => {
               <button
                 key={index}
                 onClick={() => handleSelectOption(index)}
+                disabled={isCompleted || isAutoSubmitted}
                 style={{
                   display: 'flex',
                   alignItems: 'center',

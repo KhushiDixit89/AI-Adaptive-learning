@@ -18,6 +18,12 @@ import {
   generateCurriculumLesson
 } from '../data/curriculum';
 import { QUIZ_QUESTIONS } from '../data/quizQuestions';
+import {
+  getQuizForTopic,
+  generateQuizQuestionsForTopic,
+  calculateAdaptiveQuizTimer,
+  determineStudentPace
+} from './quizEngine';
 
 /**
  * Normalizes grade strings like '9th' or '9' to 'Class 9'
@@ -115,8 +121,10 @@ export function getChapters(
 
   if (matched.length > 0) return matched;
 
-  // Fallback: match by subject name regardless of board
-  const fallback = CURRICULUM_CHAPTERS.filter((c) => validateSubjectContext(c.subject, subject));
+  // Fallback: match by subject name regardless of board, strictly within the same class level
+  const fallback = CURRICULUM_CHAPTERS.filter(
+    (c) => c.classLevel === normGrade && validateSubjectContext(c.subject, subject)
+  );
   if (fallback.length > 0) return fallback;
 
   // Create standard synthetic chapter representation
@@ -246,10 +254,7 @@ export function topicMatches(qTopic?: string, targetTopic?: string): boolean {
 
 /**
  * Subject- and Topic-specific quiz question repository
- * STRICT MATCHING:
- * - When chapter and topic are provided, only questions matching that chapter & topic are returned.
- * - STRICT NO FALLBACK RULE: Never returns questions from an unrelated topic or chapter.
- * - If no questions exist in the database, returns an empty array [] so the UI can inform the user.
+ * Delegates to universal quiz engine
  */
 export function getQuizQuestions(
   grade?: ClassLevel | string,
@@ -260,33 +265,25 @@ export function getQuizQuestions(
   topic?: string,
   difficulty?: DifficultyLevel
 ): QuizQuestion[] {
-  // 1. Filter existing questions in database that strictly match the subject
-  const subjectQuestions = QUIZ_QUESTIONS.filter((q) =>
-    validateSubjectContext(q.subject, subject)
-  );
-
-  // 2. Filter strictly by chapter and topic if provided
-  const matched = subjectQuestions.filter((q) => {
-    const chMatch = chapterMatches(q.chapter, chapter);
-    const topMatch = topicMatches(q.topic, topic);
-    return chMatch && topMatch;
+  const normGrade = normalizeGrade(grade);
+  return getQuizForTopic({
+    classLevel: normGrade,
+    board,
+    stream,
+    subject: subject as SubjectType,
+    chapter: chapter || 'General Foundations',
+    topic: topic || 'Core Concepts',
+    difficulty: difficulty || 'Intermediate',
+    learningStyle: 'Simple'
   });
-
-  if (matched.length > 0) {
-    // If difficulty is specified and there are enough matching questions, filter or sort by difficulty
-    if (difficulty) {
-      const difficultyMatched = matched.filter((q) => q.difficulty === difficulty);
-      if (difficultyMatched.length >= 3) {
-        return difficultyMatched;
-      }
-    }
-    return matched;
-  }
-
-  // STRICT NO FALLBACK: If no questions match the specific topic, return []
-  // DO NOT fall back to another chapter, subject, or generic synthetic questions.
-  return [];
 }
+
+export {
+  getQuizForTopic,
+  generateQuizQuestionsForTopic,
+  calculateAdaptiveQuizTimer,
+  determineStudentPace
+};
 
 /**
  * Returns dynamic recommendations based on subject, grade, and weak areas

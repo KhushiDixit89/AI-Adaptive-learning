@@ -8,6 +8,7 @@ import {
   PedagogicalStyleContent,
   CurriculumLessonContent
 } from '../types';
+import { ADDITIONAL_CURRICULUM_CHAPTERS } from './curriculumExpanded';
 
 export interface SubjectMetadata {
   id: string;
@@ -1018,7 +1019,8 @@ export const CURRICULUM_CHAPTERS: CurriculumChapter[] = [
         summary: 'Application of modern science and technologies in rural and urban development.'
       }
     ]
-  }
+  },
+  ...ADDITIONAL_CURRICULUM_CHAPTERS
 ];
 
 /**

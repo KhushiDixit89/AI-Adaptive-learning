@@ -214,6 +214,22 @@ export interface QuizQuestion {
   chapter?: string;
   board?: BoardType;
   classLevel?: ClassLevel;
+  stream?: StreamType;
+  correctAnswer?: string;
+}
+
+export type StudentPace = 'Fast' | 'Normal' | 'Needs More Time';
+
+export interface AdaptiveTimerConfig {
+  totalSeconds: number;
+  secondsPerQuestion: number;
+  paceCategory: StudentPace;
+  breakdown: {
+    baseSeconds: number;
+    subjectAdjustment: number;
+    difficultyAdjustment: number;
+    paceMultiplier: number;
+  };
 }
 
 export type QuizMode = 'practice' | 'exam';
