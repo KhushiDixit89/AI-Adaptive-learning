@@ -14,13 +14,15 @@ import {
   Lightbulb,
   ShieldCheck,
   Target,
-  GraduationCap
+  GraduationCap,
+  X,
+  Bell
 } from 'lucide-react';
 import { useStudent } from '../context/StudentContext';
 import { getTodaysLesson, getChapters } from '../services/curriculumService';
 
 export const Dashboard: React.FC = () => {
-  const { student, subjects, activities, activeSubject, setActiveTab, setActiveSubject, currentLearningContext, preAssessmentResult } = useStudent();
+  const { student, subjects, activities, activeSubject, setActiveTab, setActiveSubject, currentLearningContext } = useStudent();
 
   const todaysLesson = getTodaysLesson(
     student.grade,
@@ -115,107 +117,6 @@ export const Dashboard: React.FC = () => {
           </span>
         </div>
       </div>
-
-      {/* AI Diagnostic Pre-Assessment Banner */}
-      {preAssessmentResult ? (
-        <div className="card" style={{
-          padding: '20px 24px',
-          background: 'linear-gradient(135deg, #EEF2FF 0%, #F5F3FF 100%)',
-          border: '1.5px solid #C7D2FE',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '16px'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <div style={{
-              width: '44px',
-              height: '44px',
-              borderRadius: '12px',
-              background: 'linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#FFFFFF',
-              boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)'
-            }}>
-              <Sparkles size={22} />
-            </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '1rem', fontWeight: 800, color: '#1E293B' }}>
-                  Diagnostic Baseline: {preAssessmentResult.overallScore}% ({preAssessmentResult.learningLevel})
-                </span>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, backgroundColor: '#DCFCE7', color: '#15803D', padding: '2px 8px', borderRadius: '999px' }}>
-                  Active
-                </span>
-              </div>
-              <p style={{ fontSize: '0.82rem', color: '#64748B', margin: '2px 0 0' }}>
-                {preAssessmentResult.identifiedGaps.length} learning gap(s) identified across {Object.keys(preAssessmentResult.chapterPerformance).length} chapters • {preAssessmentResult.correctAnswers} of {preAssessmentResult.totalQuestions} questions correct.
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={() => setActiveTab('pre-assessment')}
-            className="btn btn-primary"
-            style={{ padding: '8px 18px', fontSize: '0.84rem' }}
-          >
-            <span>View Diagnostic Report</span>
-            <ArrowRight size={15} />
-          </button>
-        </div>
-      ) : (
-        <div className="card" style={{
-          padding: '20px 24px',
-          background: 'linear-gradient(135deg, #EEF2FF 0%, #F5F3FF 100%)',
-          border: '1.5px solid #C7D2FE',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '16px'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <div style={{
-              width: '44px',
-              height: '44px',
-              borderRadius: '12px',
-              background: 'linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#FFFFFF',
-              boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)'
-            }}>
-              <Sparkles size={22} />
-            </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '1rem', fontWeight: 800, color: '#1E293B' }}>
-                  Establish Your Learning Baseline (Pre-Assessment)
-                </span>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, backgroundColor: '#FEF3C7', color: '#D97706', padding: '2px 8px', borderRadius: '999px' }}>
-                  Recommended
-                </span>
-              </div>
-              <p style={{ fontSize: '0.82rem', color: '#64748B', margin: '2px 0 0' }}>
-                Take a short combined diagnostic assessment to uncover your topic-level strengths, knowledge gaps, and initialize your adaptive study path.
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={() => setActiveTab('pre-assessment')}
-            className="btn btn-primary"
-            style={{ padding: '8px 18px', fontSize: '0.84rem' }}
-          >
-            <span>Start Pre-Assessment</span>
-            <ArrowRight size={15} />
-          </button>
-        </div>
-      )}
 
       {/* Row 1: Today's Learning + Motivational Card */}
       <div style={{

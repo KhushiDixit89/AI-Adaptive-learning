@@ -14,10 +14,12 @@ import {
   QuizResult,
   SyllabusFile,
   ParsedMaterial,
-  CurrentLearningContext,
   PreAssessmentResult,
   PreAssessmentQuestion,
-  StudentProfile as AuthStudentProfile
+  StudentProfile as AuthStudentProfile,
+  StudyReminder,
+  ReminderSettings,
+  CurrentLearningContext
 } from '../types';
 import {
   INITIAL_SUBJECTS,
@@ -33,6 +35,13 @@ import {
   getLearningPath,
   normalizeGrade
 } from '../services/curriculumService';
+import {
+  loadReminderSettings,
+  saveReminderSettings,
+  recordReminderDismissal,
+  recordReminderSnooze,
+  generateSmartReminder
+} from '../services/reminderService';
 import { useAuth } from './AuthContext';
 import { supabase } from '../lib/supabase';
 import { extractTextFromPDF } from '../utils/pdfExtractor';
@@ -114,6 +123,11 @@ export interface StudentContextType {
   recordPreAssessmentResult: (result: PreAssessmentResult) => void;
   clearPreAssessment: () => void;
   setPreAssessmentQuestions: React.Dispatch<React.SetStateAction<PreAssessmentQuestion[]>>;
+  reminderSettings: ReminderSettings;
+  activeReminder: StudyReminder | null;
+  updateReminderSettings: (settings: Partial<ReminderSettings>) => void;
+  dismissReminder: (id: string) => void;
+  snoozeReminder: (id: string, duration: 'later_today' | 'tomorrow') => void;
 }
 
 const StudentContext = createContext<StudentContextType | undefined>(undefined);
@@ -210,6 +224,66 @@ export const StudentProvider: React.FC<{ children: React.ReactNode }> = ({ child
       throw err;
     }
   };
+
+  // Smart Study Reminders state & persistence
+  const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(loadReminderSettings);
+  const [reminderNonce, setReminderNonce] = useState<number>(0);
+
+  const activeReminder = React.useMemo(() => {
+    return generateSmartReminder({
+      student,
+      currentLearningContext,
+      lastQuizResult,
+      subjects,
+      reminderSettings
+    });
+  }, [student, currentLearningContext, lastQuizResult, subjects, reminderSettings, reminderNonce]);
+
+  const updateReminderSettings = (newSettings: Partial<ReminderSettings>) => {
+    setReminderSettings((prev) => {
+      const updated = { ...prev, ...newSettings };
+      saveReminderSettings(updated);
+      return updated;
+    });
+    setNotification({
+      message: 'Study reminder settings updated.',
+      type: 'success'
+    });
+  };
+
+  const dismissReminder = (id: string) => {
+    recordReminderDismissal(id);
+    setReminderNonce((n) => n + 1);
+  };
+
+  const snoozeReminder = (id: string, duration: 'later_today' | 'tomorrow') => {
+    recordReminderSnooze(id, duration);
+    setReminderNonce((n) => n + 1);
+    setNotification({
+      message: `Reminder snoozed until ${duration === 'later_today' ? 'later today (+3 hrs)' : 'tomorrow'}.`,
+      type: 'info'
+    });
+  };
+
+  // Synchronize student profile whenever auth user changes
+  useEffect(() => {
+    if (user) {
+      const userGrade = normalizeGrade(user.grade);
+      setStudent((prev) => ({
+        ...prev,
+        name: user.name,
+        grade: userGrade,
+        level: user.level || prev.level,
+        preferredStyle: user.preferredStyle || prev.preferredStyle
+      }));
+      setCurrentLearningContext((prev) => ({
+        ...prev,
+        classLevel: userGrade,
+        learningStyle: user.preferredStyle || prev.learningStyle,
+        difficulty: user.level || prev.difficulty
+      }));
+    }
+  }, [user]);
 
   const removeUploadedMaterial = () => {
     setUploadedMaterial(null);
@@ -750,14 +824,51 @@ export const StudentProvider: React.FC<{ children: React.ReactNode }> = ({ child
       );
     }
 
+    // 3.5. Evaluate Timed Quiz / Exam Challenge Intelligence
+    if (result.timedQuizAnalytics) {
+      const { averageResponseTime, speedCategory, performanceInsight, recommendedNextStep } =
+        result.timedQuizAnalytics;
+
+      if (accuracy >= 80 && speedCategory === 'slow') {
+        const speedRec: RecommendationItem = {
+          id: `rec-speed-${Date.now()}`,
+          topic: `Rapid Recall: ${topic}`,
+          subject: subject,
+          difficulty: newLevel,
+          reason: `Accuracy is strong (${accuracy}%), but response speed (${averageResponseTime}s/q) indicates speed practice will help in exams.`,
+          duration: '10 min',
+          priority: 'Practice'
+        };
+        setRecommendations((prev) => [speedRec, ...prev.slice(0, 4)]);
+      } else if (accuracy < 60 && speedCategory === 'fast') {
+        const reasoningRec: RecommendationItem = {
+          id: `rec-reasoning-${Date.now()}`,
+          topic: `${topic} Conceptual Reasoning`,
+          subject: subject,
+          difficulty: 'Beginner',
+          reason: `Fast response speed detected (${averageResponseTime}s/q), but accuracy was ${accuracy}%. Review key reasoning steps before attempting timed sets.`,
+          duration: '15 min',
+          priority: 'High Priority'
+        };
+        setRecommendations((prev) => [reasoningRec, ...prev.slice(0, 4)]);
+      }
+
+      // Re-trigger smart reminder to reflect new quiz insights
+      setReminderNonce((n) => n + 1);
+    }
+
     // 4. Add Activity Log
+    const timeSubtitle = result.timedQuizAnalytics
+      ? ` • Time: ${Math.floor(result.timedQuizAnalytics.totalTimeUsed / 60)}m ${result.timedQuizAnalytics.totalTimeUsed % 60}s (${result.timedQuizAnalytics.averageResponseTime}s/q)`
+      : '';
+
     const newActivity: ActivityItem = {
       id: `act-${Date.now()}`,
       type: 'quiz',
-      title: `Quiz completed: ${topic}`,
-      subtitle: `${subject} • Score: ${score}/${totalQuestions} (${accuracy}%)`,
+      title: `${result.isExamMode ? '⏱️ Exam Challenge' : 'Quiz'} completed: ${topic}`,
+      subtitle: `${subject} • Score: ${score}/${totalQuestions} (${accuracy}%)${timeSubtitle}`,
       time: 'Just now',
-      tag: `Accuracy: ${accuracy}%`,
+      tag: result.timedQuizAnalytics ? `${result.timedQuizAnalytics.speedCategory.toUpperCase()} • ${accuracy}%` : `Accuracy: ${accuracy}%`,
       badgeType: accuracy >= 80 ? 'On Track' : accuracy >= 60 ? 'Practice' : 'High Priority'
     };
 
@@ -861,7 +972,12 @@ export const StudentProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setIsGeneratingAssessment,
         recordPreAssessmentResult,
         clearPreAssessment,
-        setPreAssessmentQuestions
+        setPreAssessmentQuestions,
+        reminderSettings,
+        activeReminder,
+        updateReminderSettings,
+        dismissReminder,
+        snoozeReminder
       }}
     >
       {children}

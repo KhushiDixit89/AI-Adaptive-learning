@@ -8,12 +8,18 @@ import {
   Award,
   Sparkles,
   ArrowUpRight,
-  PieChart
+  PieChart,
+  Clock,
+  Timer,
+  Zap,
+  Gauge,
+  AlertCircle,
+  ArrowRight
 } from 'lucide-react';
 import { useStudent } from '../context/StudentContext';
 
 export const AnalyticsView: React.FC = () => {
-  const { student, subjects, activities } = useStudent();
+  const { student, subjects, activities, lastQuizResult, setActiveTab, startQuizForCurrentTopic } = useStudent();
 
   // Weekly study activity mock
   const weeklyDays = [
@@ -25,6 +31,40 @@ export const AnalyticsView: React.FC = () => {
     { day: 'Sat', hours: 3.0, lessons: 6 },
     { day: 'Sun', hours: 2.2, lessons: 4 },
   ];
+
+  // Subject benchmark response times
+  const subjectPacingBenchmarks = [
+    { subject: 'Mathematics', benchmark: '45s', category: 'Analytical Rigor', color: '#4F46E5', icon: '📐' },
+    { subject: 'Science', benchmark: '32s', category: 'Conceptual Reasoning', color: '#10B981', icon: '🔬' },
+    { subject: 'Computer Science', benchmark: '35s', category: 'Algorithmic Logic', color: '#06B6D4', icon: '💻' },
+    { subject: 'English', benchmark: '28s', category: 'Comprehension Speed', color: '#F59E0B', icon: '📖' },
+    { subject: 'Social Studies', benchmark: '24s', category: 'Factual Recall', color: '#EC4899', icon: '🌍' },
+  ];
+
+  const timedAnalytics = lastQuizResult?.timedQuizAnalytics;
+  const avgResponseTimeDisplay = timedAnalytics
+    ? `${Math.round(timedAnalytics.averageResponseTime)}s / question`
+    : '34s / question';
+
+  const timedAccuracyDisplay = timedAnalytics
+    ? `${lastQuizResult.accuracy}%`
+    : `${student.overallAccuracy}%`;
+
+  const paceLabel = timedAnalytics
+    ? timedAnalytics.speedCategory === 'fast'
+      ? 'Rapid & Fluent'
+      : timedAnalytics.speedCategory === 'moderate'
+        ? 'Steady & Balanced'
+        : 'Deliberate & Thorough'
+    : 'Steady & Balanced';
+
+  const paceColor = timedAnalytics
+    ? timedAnalytics.speedCategory === 'fast'
+      ? '#059669'
+      : timedAnalytics.speedCategory === 'moderate'
+        ? '#4F46E5'
+        : '#D97706'
+    : '#4F46E5';
 
   return (
     <div style={{
@@ -44,7 +84,7 @@ export const AnalyticsView: React.FC = () => {
           Progress & Analytics
         </h1>
         <p style={{ color: '#64748B', fontSize: '0.92rem', margin: 0 }}>
-          Detailed performance metrics tracked across all 5 active subjects.
+          Detailed performance metrics tracked across all active subjects and adaptive assessments.
         </p>
       </div>
 
@@ -103,7 +143,213 @@ export const AnalyticsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Row 2: Subject Performance Bars + Weekly Activity */}
+      {/* Row 2: Exam Response & Timed Performance Diagnostics */}
+      <div className="card" style={{ padding: '28px', backgroundColor: '#FFFFFF' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                backgroundColor: '#EEF2FF',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#4F46E5'
+              }}>
+                <Timer size={18} />
+              </div>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#1E293B', margin: 0 }}>
+                Exam Response & Timed Performance
+              </h3>
+            </div>
+            <p style={{ fontSize: '0.82rem', color: '#64748B', margin: '4px 0 0 40px' }}>
+              Cognitive speed and accuracy evaluated simultaneously under simulated exam constraints.
+            </p>
+          </div>
+
+          <button
+            onClick={() => {
+              startQuizForCurrentTopic();
+              setActiveTab('quiz');
+            }}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '10px',
+              border: 'none',
+              backgroundColor: '#4F46E5',
+              color: '#FFFFFF',
+              fontWeight: 700,
+              fontSize: '0.82rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(79, 70, 229, 0.25)'
+            }}
+          >
+            <Zap size={14} /> Practice Timed Quiz
+          </button>
+        </div>
+
+        {/* 4 Timed Performance Cards */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: '16px',
+          marginBottom: '24px'
+        }}>
+          <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>
+              Avg Response Time
+            </span>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#1E293B', margin: '4px 0' }}>
+              {avgResponseTimeDisplay}
+            </div>
+            <span style={{ fontSize: '0.72rem', color: '#059669', fontWeight: 600 }}>
+              ✓ Well within 60s target
+            </span>
+          </div>
+
+          <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>
+              Exam Accuracy
+            </span>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#10B981', margin: '4px 0' }}>
+              {timedAccuracyDisplay}
+            </div>
+            <span style={{ fontSize: '0.72rem', color: '#64748B', fontWeight: 600 }}>
+              Under time pressure
+            </span>
+          </div>
+
+          <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>
+              Pacing & Fluency
+            </span>
+            <div style={{ fontSize: '1.2rem', fontWeight: 800, color: paceColor, margin: '6px 0 2px' }}>
+              {paceLabel}
+            </div>
+            <span style={{ fontSize: '0.72rem', color: '#64748B', fontWeight: 600 }}>
+              Accuracy prioritised over speed
+            </span>
+          </div>
+
+          <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>
+              Attempt Rate
+            </span>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#4F46E5', margin: '4px 0' }}>
+              {timedAnalytics ? `${timedAnalytics.questionsAnswered} / ${timedAnalytics.questionsAnswered + timedAnalytics.questionsSkipped}` : '100%'}
+            </div>
+            <span style={{ fontSize: '0.72rem', color: '#64748B', fontWeight: 600 }}>
+              {timedAnalytics && timedAnalytics.questionsSkipped > 0
+                ? `${timedAnalytics.questionsSkipped} questions skipped`
+                : 'Zero skipped questions'}
+            </span>
+          </div>
+        </div>
+
+        {/* Live Assessment Insight vs Subject Pacing */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1.2fr 1fr',
+          gap: '20px'
+        }}>
+          {/* Diagnostic Matrix Explanation or Recent Assessment */}
+          <div style={{
+            padding: '20px',
+            borderRadius: '14px',
+            backgroundColor: timedAnalytics ? '#EEF2FF' : '#F8FAFC',
+            border: `1.5px solid ${timedAnalytics ? '#C7D2FE' : '#E2E8F0'}`
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+              <Gauge size={18} color="#4F46E5" />
+              <h4 style={{ fontSize: '0.92rem', fontWeight: 800, color: '#1E293B', margin: 0 }}>
+                {timedAnalytics ? `Latest Timed Assessment: ${lastQuizResult.topic}` : 'Speed × Accuracy Diagnostic Matrix'}
+              </h4>
+            </div>
+
+            {timedAnalytics ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <p style={{ fontSize: '0.85rem', color: '#1E293B', lineHeight: 1.5, margin: 0 }}>
+                  <strong>Diagnostic Finding:</strong> {timedAnalytics.performanceInsight}
+                </p>
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  backgroundColor: '#FFFFFF',
+                  border: '1px solid #C7D2FE',
+                  fontSize: '0.82rem',
+                  color: '#4F46E5',
+                  fontWeight: 600
+                }}>
+                  🎯 <strong>Recommended Next Step:</strong> {timedAnalytics.recommendedNextStep}
+                </div>
+                <div style={{ display: 'flex', gap: '16px', fontSize: '0.75rem', color: '#64748B', marginTop: '4px' }}>
+                  <span>⚡ Fastest: <strong>{timedAnalytics.fastestResponseTime}s</strong></span>
+                  <span>🐢 Slowest: <strong>{timedAnalytics.slowestResponseTime}s</strong></span>
+                  <span>⏱ Total Time: <strong>{Math.floor(timedAnalytics.totalTimeUsed / 60)}m {timedAnalytics.totalTimeUsed % 60}s</strong></span>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <p style={{ fontSize: '0.82rem', color: '#475569', lineHeight: 1.5, margin: 0 }}>
+                  GuruMitra measures your response time per question without penalising careful thought. Speed is never rewarded if accuracy drops:
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div style={{ padding: '8px 10px', borderRadius: '8px', backgroundColor: '#ECFDF5', border: '1px solid #A7F3D0', fontSize: '0.75rem' }}>
+                    <strong style={{ color: '#065F46' }}>High Acc + Fast Pace:</strong>
+                    <div style={{ color: '#047857' }}>Fluent mastery. Ready for harder topics.</div>
+                  </div>
+                  <div style={{ padding: '8px 10px', borderRadius: '8px', backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE', fontSize: '0.75rem' }}>
+                    <strong style={{ color: '#1E40AF' }}>High Acc + Slow Pace:</strong>
+                    <div style={{ color: '#1D4ED8' }}>Strong concepts. Practice recall drills.</div>
+                  </div>
+                  <div style={{ padding: '8px 10px', borderRadius: '8px', backgroundColor: '#FEF2F2', border: '1px solid #FECACA', fontSize: '0.75rem' }}>
+                    <strong style={{ color: '#991B1B' }}>Low Acc + Fast Pace:</strong>
+                    <div style={{ color: '#B91C1C' }}>Rushing warning. Slow down & read questions.</div>
+                  </div>
+                  <div style={{ padding: '8px 10px', borderRadius: '8px', backgroundColor: '#FFFBEB', border: '1px solid #FDE68A', fontSize: '0.75rem' }}>
+                    <strong style={{ color: '#92400E' }}>Low Acc + Slow Pace:</strong>
+                    <div style={{ color: '#B45309' }}>Foundational gap. Review topic explanation.</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Subject Pacing Benchmarks */}
+          <div style={{
+            padding: '20px',
+            borderRadius: '14px',
+            backgroundColor: '#F8FAFC',
+            border: '1px solid #E2E8F0'
+          }}>
+            <h4 style={{ fontSize: '0.92rem', fontWeight: 800, color: '#1E293B', marginBottom: '12px' }}>
+              Target Response Times by Subject
+            </h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {subjectPacingBenchmarks.map((b, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>{b.icon}</span>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1E293B' }}>{b.subject}</span>
+                    <span style={{ fontSize: '0.7rem', color: '#64748B' }}>({b.category})</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 800, color: b.color }}>~{b.benchmark}</span>
+                    <span style={{ fontSize: '0.7rem', color: '#94A3B8' }}>/ q</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Row 3: Subject Performance Bars + Weekly Activity */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'minmax(0, 1.8fr) minmax(0, 1.2fr)',
@@ -208,7 +454,7 @@ export const AnalyticsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Row 3: Strengths vs Weaknesses Breakdown */}
+      {/* Row 4: Strengths vs Weaknesses Breakdown */}
       <div className="card" style={{ padding: '28px' }}>
         <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#1E293B', marginBottom: '20px' }}>
           Diagnostic Strengths & Improvement Areas

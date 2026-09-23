@@ -13,7 +13,8 @@ import {
   LogOut,
   Clock,
   Check,
-  GraduationCap
+  GraduationCap,
+  Bell
 } from 'lucide-react';
 import { useStudent } from '../context/StudentContext';
 import { useAuth } from '../context/AuthContext';
@@ -21,9 +22,9 @@ import { LearningStyle, ClassLevel, BoardType, StreamType, DifficultyLevel } fro
 import { getAvailableSubjects, normalizeGrade } from '../services/curriculumService';
 
 export const ProfileModal: React.FC = () => {
-  const { student, updateProfile, setAcademicProfile, setActiveTab } = useStudent();
+  const { student, updateProfile, setAcademicProfile, setActiveTab, reminderSettings, updateReminderSettings } = useStudent();
   const { user, logout } = useAuth();
-  const [activeSubView, setActiveSubView] = useState<'profile' | 'account'>('profile');
+  const [activeSubView, setActiveSubView] = useState<'profile' | 'reminders' | 'account'>('profile');
 
   // Form states initialized with current student
   const [name, setName] = useState(student.name);
@@ -33,6 +34,15 @@ export const ProfileModal: React.FC = () => {
   const [level, setLevel] = useState<DifficultyLevel>(student.level || 'Beginner');
   const [style, setStyle] = useState<LearningStyle>(student.preferredStyle);
   const [savedSuccess, setSavedSuccess] = useState(false);
+
+  // Reminder form states
+  const [remindersEnabled, setRemindersEnabled] = useState(reminderSettings.enabled);
+  const [prefTime, setPrefTime] = useState(reminderSettings.preferredTime || '18:00');
+  const [remFreq, setRemFreq] = useState<'daily' | 'weekdays' | 'custom'>(reminderSettings.frequency || 'daily');
+  const [remUnfinished, setRemUnfinished] = useState(reminderSettings.remindUnfinishedLessons);
+  const [remQuizzes, setRemQuizzes] = useState(reminderSettings.remindPendingQuizzes);
+  const [remWeak, setRemWeak] = useState(reminderSettings.remindWeakTopics);
+  const [reminderSavedSuccess, setReminderSavedSuccess] = useState(false);
 
   // Sync state if student changes
   useEffect(() => {
@@ -76,6 +86,19 @@ export const ProfileModal: React.FC = () => {
     setTimeout(() => setSavedSuccess(false), 3000);
   };
 
+  const handleSaveReminders = () => {
+    updateReminderSettings({
+      enabled: remindersEnabled,
+      preferredTime: prefTime,
+      frequency: remFreq,
+      remindUnfinishedLessons: remUnfinished,
+      remindPendingQuizzes: remQuizzes,
+      remindWeakTopics: remWeak
+    });
+    setReminderSavedSuccess(true);
+    setTimeout(() => setReminderSavedSuccess(false), 3000);
+  };
+
   return (
     <div style={{
       maxWidth: '800px',
@@ -85,12 +108,13 @@ export const ProfileModal: React.FC = () => {
       flexDirection: 'column',
       gap: '24px'
     }}>
-      {/* Tab Switcher between Profile Setup and Login/Sign Up Mockup */}
+      {/* Tab Switcher between Profile, Reminders, and Account */}
       <div style={{
         display: 'flex',
         gap: '10px',
         borderBottom: '1px solid #E2E8F0',
-        paddingBottom: '12px'
+        paddingBottom: '12px',
+        flexWrap: 'wrap'
       }}>
         <button
           onClick={() => setActiveSubView('profile')}
@@ -99,6 +123,14 @@ export const ProfileModal: React.FC = () => {
         >
           <User size={16} />
           <span>Student Academic Profile</span>
+        </button>
+        <button
+          onClick={() => setActiveSubView('reminders')}
+          className={`btn ${activeSubView === 'reminders' ? 'btn-primary' : 'btn-outline'}`}
+          style={{ padding: '8px 18px', fontSize: '0.85rem' }}
+        >
+          <Bell size={16} />
+          <span>Study Reminders</span>
         </button>
         <button
           onClick={() => setActiveSubView('account')}
@@ -110,7 +142,7 @@ export const ProfileModal: React.FC = () => {
         </button>
       </div>
 
-      {activeSubView === 'profile' ? (
+      {activeSubView === 'profile' && (
         /* PANEL: Student Profile Setup */
         <div className="card" style={{ padding: '36px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
           <div>
@@ -419,7 +451,226 @@ export const ProfileModal: React.FC = () => {
             </button>
           </div>
         </div>
-      ) : (
+      )}
+
+      {/* PANEL: Study Reminders & Settings */}
+      {activeSubView === 'reminders' && (
+        <div className="card" style={{ padding: '36px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', fontWeight: 700, color: '#4F46E5', textTransform: 'uppercase' }}>
+              <Bell size={16} />
+              <span>Smart Study Habit Engine</span>
+            </div>
+            <h2 style={{ fontSize: '1.6rem', fontWeight: 800, color: '#1E293B', marginTop: '2px' }}>
+              Study Reminders & Settings
+            </h2>
+            <p style={{ color: '#64748B', fontSize: '0.9rem', margin: 0 }}>
+              Configure proactive, context-aware reminders so GuruMitra keeps your learning momentum consistent without becoming intrusive.
+            </p>
+          </div>
+
+          {/* Master Enable Toggle */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '16px 20px',
+            borderRadius: '16px',
+            backgroundColor: remindersEnabled ? '#EEF2FF' : '#F8FAFC',
+            border: remindersEnabled ? '1.5px solid #C7D2FE' : '1px solid #E2E8F0'
+          }}>
+            <div>
+              <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#1E293B' }}>
+                Study Reminders
+              </div>
+              <div style={{ fontSize: '0.82rem', color: '#64748B', marginTop: '2px' }}>
+                {remindersEnabled ? 'Proactive notifications active based on your learning schedule' : 'Reminders are currently paused'}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setRemindersEnabled(!remindersEnabled)}
+              style={{
+                background: remindersEnabled ? '#4F46E5' : '#E2E8F0',
+                color: remindersEnabled ? '#FFFFFF' : '#64748B',
+                border: 'none',
+                padding: '8px 18px',
+                borderRadius: '999px',
+                fontWeight: 700,
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              {remindersEnabled ? 'ON' : 'OFF'}
+            </button>
+          </div>
+
+          {/* Preferred Study Time */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontSize: '0.88rem', fontWeight: 700, color: '#334155' }}>
+              Preferred Study Time
+            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <input
+                type="time"
+                value={prefTime}
+                onChange={(e) => setPrefTime(e.target.value)}
+                style={{
+                  padding: '10px 16px',
+                  borderRadius: '12px',
+                  border: '1.5px solid #CBD5E1',
+                  fontSize: '0.95rem',
+                  fontWeight: 600,
+                  color: '#1E293B',
+                  backgroundColor: '#FFFFFF',
+                  width: '180px'
+                }}
+              />
+              <span style={{ fontSize: '0.84rem', color: '#64748B' }}>
+                (Set your preferred daily learning window)
+              </span>
+            </div>
+          </div>
+
+          {/* Reminder Frequency */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontSize: '0.88rem', fontWeight: 700, color: '#334155' }}>
+              Reminder Frequency
+            </label>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              {(['daily', 'weekdays', 'custom'] as const).map((freq) => (
+                <button
+                  key={freq}
+                  type="button"
+                  onClick={() => setRemFreq(freq)}
+                  style={{
+                    flex: 1,
+                    padding: '10px 14px',
+                    borderRadius: '12px',
+                    border: remFreq === freq ? '2px solid #4F46E5' : '1.5px solid #E2E8F0',
+                    backgroundColor: remFreq === freq ? '#EEF2FF' : '#FFFFFF',
+                    color: remFreq === freq ? '#4F46E5' : '#475569',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    textTransform: 'capitalize',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {freq}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Specific Context Toggles */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <label style={{ fontSize: '0.88rem', fontWeight: 700, color: '#334155' }}>
+              Contextual Triggers
+            </label>
+
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              padding: '12px 16px',
+              borderRadius: '12px',
+              backgroundColor: '#F8FAFC',
+              border: '1px solid #E2E8F0',
+              cursor: 'pointer'
+            }}>
+              <input
+                type="checkbox"
+                checked={remUnfinished}
+                onChange={(e) => setRemUnfinished(e.target.checked)}
+                style={{ width: '18px', height: '18px', accentColor: '#4F46E5' }}
+              />
+              <div>
+                <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#1E293B' }}>
+                  Remind me about unfinished lessons
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#64748B' }}>
+                  Prompt to continue active chapters like {student.grade} Mathematics
+                </div>
+              </div>
+            </label>
+
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              padding: '12px 16px',
+              borderRadius: '12px',
+              backgroundColor: '#F8FAFC',
+              border: '1px solid #E2E8F0',
+              cursor: 'pointer'
+            }}>
+              <input
+                type="checkbox"
+                checked={remQuizzes}
+                onChange={(e) => setRemQuizzes(e.target.checked)}
+                style={{ width: '18px', height: '18px', accentColor: '#4F46E5' }}
+              />
+              <div>
+                <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#1E293B' }}>
+                  Remind me about pending quizzes
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#64748B' }}>
+                  Prompt to take chapter diagnostic assessments after reading lessons
+                </div>
+              </div>
+            </label>
+
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              padding: '12px 16px',
+              borderRadius: '12px',
+              backgroundColor: '#F8FAFC',
+              border: '1px solid #E2E8F0',
+              cursor: 'pointer'
+            }}>
+              <input
+                type="checkbox"
+                checked={remWeak}
+                onChange={(e) => setRemWeak(e.target.checked)}
+                style={{ width: '18px', height: '18px', accentColor: '#4F46E5' }}
+              />
+              <div>
+                <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#1E293B' }}>
+                  Remind me to revise weak topics
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#64748B' }}>
+                  Prioritize 10-minute micro-drills on topics flagged with lower accuracy
+                </div>
+              </div>
+            </label>
+          </div>
+
+          {/* Action Bar */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', marginTop: '12px' }}>
+            {reminderSavedSuccess && (
+              <span style={{ fontSize: '0.85rem', color: '#10B981', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Check size={16} />
+                <span>Reminder Settings Saved!</span>
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleSaveReminders}
+              className="btn btn-primary"
+              style={{ padding: '10px 24px', borderRadius: '12px' }}
+            >
+              <Save size={16} />
+              <span>Save Reminder Settings</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activeSubView === 'account' && (
         /* PANEL: Account & Security */
         <div className="card" style={{ padding: '36px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
           <div>

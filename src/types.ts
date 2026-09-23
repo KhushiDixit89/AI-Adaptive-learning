@@ -216,6 +216,33 @@ export interface QuizQuestion {
   classLevel?: ClassLevel;
 }
 
+export type QuizMode = 'practice' | 'exam';
+
+export interface QuestionResponseLog {
+  questionId: string;
+  questionIndex: number;
+  timeSpent: number; // in seconds
+  correct: boolean;
+  skipped: boolean;
+  selectedIndex: number | null;
+}
+
+export interface TimedQuizAnalytics {
+  totalTimeUsed: number; // in seconds
+  totalTimeLimit: number; // in seconds
+  averageResponseTime: number; // in seconds
+  fastestResponseTime: number; // in seconds
+  slowestResponseTime: number; // in seconds
+  questionsAnswered: number;
+  questionsSkipped: number;
+  speedCategory: 'fast' | 'moderate' | 'slow';
+  performanceInsight: string;
+  recommendedNextStep: string;
+  isExamMode: boolean;
+  autoSubmitted: boolean;
+  questionLogs: QuestionResponseLog[];
+}
+
 export interface QuizResult {
   score: number;
   totalQuestions: number;
@@ -229,6 +256,42 @@ export interface QuizResult {
   newDifficulty: DifficultyLevel;
   recommendedTopic: string;
   userAnswers: { questionIndex: number; selectedIndex: number; isCorrect: boolean }[];
+  timedQuizAnalytics?: TimedQuizAnalytics;
+  isExamMode?: boolean;
+}
+
+export type ReminderType =
+  | 'daily'
+  | 'continue_lesson'
+  | 'weak_topic'
+  | 'quiz_pending'
+  | 'streak'
+  | 'revision';
+
+export interface StudyReminder {
+  id: string;
+  type: ReminderType;
+  title: string;
+  message: string;
+  subject: SubjectType;
+  chapter?: string;
+  topic?: string;
+  actionText: string;
+  actionTab: string;
+  priority: number; // 1 (highest) to 6
+  estimatedMinutes: number;
+  createdAt: string;
+  snoozedUntil?: string | null;
+  isDismissed?: boolean;
+}
+
+export interface ReminderSettings {
+  enabled: boolean;
+  preferredTime: string; // e.g. "18:00"
+  frequency: 'daily' | 'weekdays' | 'custom';
+  remindUnfinishedLessons: boolean;
+  remindPendingQuizzes: boolean;
+  remindWeakTopics: boolean;
 }
 
 export interface ParsedMaterial {
