@@ -652,6 +652,29 @@ export const CURRICULUM_CHAPTERS: CurriculumChapter[] = [
     ]
   },
   {
+    id: 'cbse-9-cs-ch1',
+    number: 1,
+    title: 'Computer Applications & Programming Fundamentals',
+    subject: 'Computer Science',
+    classLevel: 'Class 9',
+    board: 'CBSE',
+    description: 'Basics of Information Technology, computer organization, cyber safety, algorithms, and Python programming.',
+    topics: [
+      {
+        id: 'cbse-9-cs-t1',
+        title: 'Computer Systems and Programming Concepts',
+        difficulty: 'Beginner',
+        keyPoints: [
+          'Computer system components: CPU, Primary Memory (RAM, ROM), Secondary Storage, I/O devices.',
+          'Software classification: System software (Operating System) and Application software.',
+          'Algorithm and Flowchart: Sequential execution, decision making (conditions), and iterative loops.'
+        ],
+        formulas: ['1 Byte = 8 Bits', '1 KB = 1024 Bytes', '1 MB = 1024 KB', '1 GB = 1024 MB'],
+        summary: 'Hardware architecture, data representation, binary logic, and computational problem solving.'
+      }
+    ]
+  },
+  {
     id: 'cbse-cs-ch1',
     number: 1,
     title: 'Data Structures',

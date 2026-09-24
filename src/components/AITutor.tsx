@@ -271,18 +271,21 @@ export const AITutor: React.FC = () => {
       if (responseStructure.followUpQuestions && responseStructure.followUpQuestions.length > 0) {
         setActiveSuggestions(responseStructure.followUpQuestions);
       }
-    } catch (err) {
+    } catch (err: any) {
+      const errorText = err?.message || "AI Tutor is temporarily unavailable. Please try again.";
       const errorMsg: TutorMessage = {
         id: `tutor-err-${Date.now()}`,
         sender: 'tutor',
-        text: "I couldn't generate the answer right now. Please try again.",
+        text: errorText,
         timestamp: 'Just now',
         subject: activeSubject,
         styleUsed: student.preferredStyle,
         structuredResponse: {
-          directAnswer: "I couldn't generate the answer right now. Please try again.",
-          simpleExplanation: "An unexpected error occurred while analyzing your query. Please rephrase your question or select one of the suggested topics below.",
-          keyConcept: 'System Resiliency: Check your query formatting and network connection.'
+          directAnswer: errorText,
+          simpleExplanation: errorText.includes('not configured')
+            ? 'Add OPENAI_API_KEY to the server environment (.env file) and restart the server to enable live tutoring.'
+            : 'AI Tutor is temporarily unavailable. Please try again.',
+          keyConcept: errorText.includes('not configured') ? 'Environment Configuration' : 'Service Notice'
         }
       };
       setMessages((prev) => [...prev, errorMsg]);
@@ -1064,7 +1067,7 @@ export const AITutor: React.FC = () => {
             gap: '6px'
           }}>
             <AlertCircle size={14} color="#EF4444" />
-            <span>Please enter a question first.</span>
+            <span>Please enter a question.</span>
           </div>
         )}
 

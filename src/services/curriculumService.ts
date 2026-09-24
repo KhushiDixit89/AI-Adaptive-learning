@@ -47,7 +47,12 @@ export function validateSubjectContext(contentSubject: string, expectedSubject: 
   if (!contentSubject || !expectedSubject) return false;
   const c = contentSubject.trim().toLowerCase();
   const e = expectedSubject.trim().toLowerCase();
-  return c === e || c.includes(e) || e.includes(c);
+  if (c === e) return true;
+  // Bilingual pairs (Hindi / English subject translations)
+  if ((c === 'mathematics' || c === 'ganit') && (e === 'mathematics' || e === 'ganit')) return true;
+  if ((c === 'science' || c === 'vigyan') && (e === 'science' || e === 'vigyan')) return true;
+  if ((c === 'social science' || c === 'samajik vigyan') && (e === 'social science' || e === 'samajik vigyan')) return true;
+  return false;
 }
 
 /**

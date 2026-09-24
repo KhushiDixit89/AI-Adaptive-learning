@@ -5,15 +5,20 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const geminiApiKey = env.GEMINI_API_KEY || env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
   const geminiModel = env.GEMINI_MODEL || process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+  const openaiApiKey = env.OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
+  const openaiModel = env.OPENAI_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
   return {
     plugins: [
       react(),
       {
-        name: 'gemini-api-middleware',
+        name: 'ai-api-middleware',
         configureServer(server) {
           server.middlewares.use(async (req, res, next) => {
-            if (!req.url?.startsWith('/api/ai/')) {
+            const rawUrl = req.url || '';
+            const urlPath = rawUrl.split('?')[0];
+
+            if (!urlPath.startsWith('/api/ai/') && urlPath !== '/api/ai-tutor' && urlPath !== '/api/ai-tutor/status') {
               return next();
             }
 
@@ -39,7 +44,26 @@ export default defineConfig(({ mode }) => {
             };
 
             try {
-              // 0. Server-side PDF Text Extraction Endpoint (Runs locally in Node.js, zero external API key needed)
+              // 0. OpenAI AI Tutor Endpoint (POST /api/ai-tutor or POST /api/ai/tutor)
+              if ((urlPath === '/api/ai-tutor' || urlPath === '/api/ai/tutor') && req.method === 'POST') {
+                const body = await readBody();
+                const { handleAITutorRequest } = await import('./src/server/aiTutorHandler.js');
+                const result = await handleAITutorRequest(body, {
+                  apiKey: openaiApiKey,
+                  model: openaiModel
+                });
+                return sendJson(result.status, result.body);
+              }
+
+              // Endpoint: /api/ai-tutor/status (GET)
+              if (urlPath === '/api/ai-tutor/status' && req.method === 'GET') {
+                return sendJson(200, {
+                  configured: Boolean(openaiApiKey),
+                  model: openaiModel
+                });
+              }
+
+              // 1. Server-side PDF Text Extraction Endpoint (Runs locally in Node.js, zero external API key needed)
               if (req.url === '/api/ai/extract-pdf-text' && req.method === 'POST') {
                 const body = await readBody();
                 const base64 = body.base64 || body.base64Data || body.data;

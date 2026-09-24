@@ -623,130 +623,92 @@ export function getGradeCalibrationNote(
 
 /**
  * Core Answer Generator:
- * Generates tailored structured response matching learning style,
- * grade level, board, stream, response type, and cross-subject context.
+ * Connects directly to the server-side OpenAI Responses API endpoint (/api/ai-tutor).
+ * Dispatches student context, active subject, learning style, and recent conversation.
  */
 export async function generateTutorAnswer(
   request: AITutorRequest
 ): Promise<NonNullable<TutorMessage['structuredResponse']>> {
-  const { question, subject, learningStyle, gradeLevel, board, stream, difficulty, uploadedContext } = request;
+  const {
+    question,
+    subject,
+    learningStyle,
+    gradeLevel,
+    board,
+    stream,
+    difficulty,
+    chapter,
+    topic,
+    uploadedContext,
+    conversationHistory
+  } = request;
+
   const cleanQ = question.trim();
-
-  // 1. Topic & Subject Detection
-  const hasDoc = Boolean(uploadedContext && uploadedContext.extractedText.length > 20);
-  const detected = detectQuestionTopic(cleanQ, subject, hasDoc);
-
-  let crossSubjectNotice: string | undefined;
-
-  // Cross-subject document inspection (Requirement 13)
-  if (hasDoc && uploadedContext) {
-    const docLower = uploadedContext.extractedText.toLowerCase();
-    const chemKeywords = [
-      'functional group',
-      'organic chemistry',
-      'covalent bond',
-      'alcohol',
-      'aldehyde',
-      'ketone',
-      'carboxylic',
-      'chemical reaction',
-      'acid',
-      'base',
-      'periodic table',
-      'hydrocarbon'
-    ];
-    const phyKeywords = [
-      'electric current',
-      'resistance',
-      'ohm\'s law',
-      'newton\'s laws',
-      'gravitation',
-      'optics',
-      'kinematics',
-      'thermodynamics'
-    ];
-    const bioKeywords = [
-      'photosynthesis',
-      'digestive system',
-      'cell membrane',
-      'mitochondria',
-      'genetics',
-      'dna',
-      'heredity'
-    ];
-
-    if (subject === 'Mathematics') {
-      if (chemKeywords.some((k) => docLower.includes(k))) {
-        crossSubjectNotice = 'This material appears to be related to Chemistry, while your current subject is Mathematics.';
-      } else if (phyKeywords.some((k) => docLower.includes(k))) {
-        crossSubjectNotice = 'This material appears to be related to Physics, while your current subject is Mathematics.';
-      } else if (bioKeywords.some((k) => docLower.includes(k))) {
-        crossSubjectNotice = 'This material appears to be related to Biology, while your current subject is Mathematics.';
-      }
-    }
-  } else if (detected.subject !== subject) {
-    crossSubjectNotice = `This question is related to ${detected.subject} rather than ${subject}. Here is the complete answer for you!`;
+  if (!cleanQ) {
+    throw new Error('Please enter a question.');
   }
 
-  const followUpQuestions = generateFollowUpQuestions(detected.topicName, detected.subject, hasDoc);
+  // Format recent conversation history for multi-turn conversational memory (cost-controlled)
+  const recentConversation = (conversationHistory || []).slice(-8).map((msg) => ({
+    role: (msg.sender === 'student' ? 'user' : 'assistant') as 'user' | 'assistant',
+    content: msg.text || msg.structuredResponse?.directAnswer || ''
+  }));
 
-  // 2. Handle Uploaded Document Reasoning
-  if (detected.responseType === 'document' && uploadedContext) {
-    const docText = uploadedContext.extractedText;
-    const docName = uploadedContext.fileName;
+  try {
+    const res = await fetch('/api/ai-tutor', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message: cleanQ,
+        context: {
+          classLevel: gradeLevel || 'Class 9',
+          board: board || 'CBSE',
+          stream: stream || 'Not applicable',
+          subject: subject || 'General',
+          chapter: chapter || '',
+          topic: topic || '',
+          learningStyle: learningStyle || 'Simple',
+          difficulty: difficulty || 'Beginner'
+        },
+        conversation: recentConversation,
+        uploadedContext: uploadedContext || null
+      })
+    });
 
-    // Search document for relevant sentence/paragraph
-    const lowerQ = cleanQ.toLowerCase();
-    const queryKeywords = lowerQ.split(/\s+/).filter((w) => w.length > 3);
-    const paragraphs = docText.split(/\n+/).filter((p) => p.trim().length > 20);
+    const data = await res.json().catch(() => null);
 
-    let bestParagraph = paragraphs[0] || docText.slice(0, 300);
-    let highestHits = 0;
-
-    for (const p of paragraphs) {
-      let hits = 0;
-      const lowerP = p.toLowerCase();
-      for (const kw of queryKeywords) {
-        if (lowerP.includes(kw)) hits++;
+    if (!res.ok || !data) {
+      if (res.status === 503 && data?.notConfigured) {
+        return {
+          responseType: 'general',
+          directAnswer: 'AI Tutor API is not configured. Add OPENAI_API_KEY to the server environment.',
+          simpleExplanation: 'To activate dynamic OpenAI tutoring, please configure your OPENAI_API_KEY in the server environment (.env file) and restart Vite.',
+          keyConcept: 'Server Configuration: OPENAI_API_KEY is required to enable live AI responses.',
+          followUpQuestions: [
+            'What is photosynthesis?',
+            "Explain Newton's second law with an example",
+            'What is a binary tree?'
+          ]
+        };
       }
-      if (hits > highestHits) {
-        highestHits = hits;
-        bestParagraph = p;
-      }
+
+      const errMsg = data?.error || 'AI Tutor is temporarily unavailable. Please try again.';
+      throw new Error(errMsg);
     }
 
-    const excerpt = bestParagraph.length > 350 ? bestParagraph.slice(0, 347) + '...' : bestParagraph;
+    if (data.data) {
+      return data.data;
+    }
 
-    return {
-      responseType: 'document',
-      crossSubjectNotice,
-      directAnswer: `Based on your uploaded material "${docName}", here is the answer:`,
-      simpleExplanation: `GuruMitra scanned your document. ${cleanQ.toLowerCase().includes('summarize') ? 'Here is a clear breakdown of the core ideas contained in the text.' : 'We located the key passage that directly answers your question.'}`,
-      relevantContentFound: excerpt,
-      documentReference: `Found in ${docName} (approx. ${uploadedContext.extractedText.split(/\s+/).length} words parsed).`,
-      keyConcept: 'Document Ingestion: Real content extracted directly from your study material.',
-      example: 'Tip: You can ask specific questions like "What are the key terms in section 2?" or "Create a 3-question quiz from this chapter."',
-      followUpQuestions,
-      practiceQuestion: {
-        question: `Based on "${docName}": Which main topic did you find most challenging in this section?`,
-        answer: 'You can highlight any specific paragraph or formula to get an in-depth explanation!'
-      }
-    };
+    throw new Error('Invalid response received from AI Tutor service.');
+  } catch (err: any) {
+    console.error('GuruMitra AI Tutor Service Error:', err);
+    throw err;
   }
-
-  // 3. Mathematical Response Format
-  if (detected.responseType === 'mathematical') {
-    return generateMathAnswer(cleanQ, learningStyle, gradeLevel, board, stream, difficulty, crossSubjectNotice, followUpQuestions);
-  }
-
-  // 4. Programming / Code Response Format
-  if (detected.responseType === 'programming') {
-    return generateProgrammingAnswer(cleanQ, detected.topicName, learningStyle, gradeLevel, board, stream, difficulty, crossSubjectNotice, followUpQuestions);
-  }
-
-  // 5. Conceptual Response Format (Chemistry, Physics, Biology, Science, English, Social Science, Commerce, General)
-  return generateConceptualAnswer(cleanQ, detected.topicName, detected.subject, learningStyle, gradeLevel, board, stream, difficulty, crossSubjectNotice, followUpQuestions);
 }
+
 
 /**
  * Specialized Mathematical Answer Generator
