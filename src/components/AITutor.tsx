@@ -15,7 +15,8 @@ import {
   Lightbulb,
   CheckCircle2,
   BookOpen,
-  Code2
+  Code2,
+  Key
 } from 'lucide-react';
 import { useStudent } from '../context/StudentContext';
 import { SubjectType, LearningStyle, TutorMessage } from '../types';
@@ -62,6 +63,14 @@ export const AITutor: React.FC = () => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showPracticeAnswer, setShowPracticeAnswer] = useState<Record<string, boolean>>({});
   const [emptyQueryAlert, setEmptyQueryAlert] = useState(false);
+  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [modelInput, setModelInput] = useState('gpt-4o-mini');
+  const [isSavingKey, setIsSavingKey] = useState(false);
+  const [saveKeyError, setSaveKeyError] = useState<string | null>(null);
+  const [saveKeySuccess, setSaveKeySuccess] = useState<string | null>(null);
+  const [apiConfigured, setApiConfigured] = useState(false);
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -210,7 +219,59 @@ export const AITutor: React.FC = () => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
-  const handleSendMessage = async (textToSend?: string) => {
+  useEffect(() => {
+    fetch('/api/ai-tutor/status')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && typeof data.configured === 'boolean') {
+          setApiConfigured(data.configured);
+          if (data.model) setModelInput(data.model);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSaveApiKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!apiKeyInput.trim()) {
+      setSaveKeyError('Please enter a valid OpenAI API key (starts with sk-).');
+      return;
+    }
+    setIsSavingKey(true);
+    setSaveKeyError(null);
+    setSaveKeySuccess(null);
+
+    try {
+      const res = await fetch('/api/ai-tutor/configure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiKey: apiKeyInput.trim(),
+          model: modelInput
+        })
+      });
+      const data = await res.json().catch(() => null);
+
+      if (res.ok && data?.success) {
+        setApiConfigured(true);
+        setIsOfflineMode(false);
+        setSaveKeySuccess('OpenAI API Key configured successfully! Live AI Tutor is now active.');
+        setTimeout(() => {
+          setIsConfigModalOpen(false);
+          setSaveKeySuccess(null);
+          setApiKeyInput('');
+        }, 1200);
+      } else {
+        setSaveKeyError(data?.error || 'Failed to save API key. Please check permissions.');
+      }
+    } catch (err: any) {
+      setSaveKeyError(err?.message || 'Connection error while saving key.');
+    } finally {
+      setIsSavingKey(false);
+    }
+  };
+
+  const handleSendMessage = async (textToSend?: string, forceOffline?: boolean) => {
     const query = (textToSend || inputQuery).trim();
     if (!query) {
       setEmptyQueryAlert(true);
@@ -233,6 +294,8 @@ export const AITutor: React.FC = () => {
     setInputQuery('');
     setIsTyping(true);
 
+    const useOffline = forceOffline !== undefined ? forceOffline : isOfflineMode;
+
     try {
       // Call scalable AI Tutor Service with rich educational reasoning
       const responseStructure = await generateTutorAnswer({
@@ -252,7 +315,8 @@ export const AITutor: React.FC = () => {
               extractedText: uploadedMaterial.extractedText
             }
           : null,
-        conversationHistory: messages
+        conversationHistory: messages,
+        offlineMode: useOffline
       });
 
       const botMessage: TutorMessage = {
@@ -437,7 +501,51 @@ export const AITutor: React.FC = () => {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            {/* Status / Configure Button */}
+            <button
+              onClick={() => setIsConfigModalOpen(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '4px 10px',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                borderRadius: '999px',
+                border: apiConfigured ? '1px solid #BBF7D0' : '1px solid #FCD34D',
+                backgroundColor: apiConfigured ? '#F0FDF4' : '#FEF3C7',
+                color: apiConfigured ? '#15803D' : '#B45309',
+                cursor: 'pointer'
+              }}
+              title="Click to configure OpenAI API Key"
+            >
+              <Key size={13} />
+              <span>{apiConfigured ? `OpenAI Connected (${modelInput})` : 'Configure API Key'}</span>
+            </button>
+
+            {/* Offline / Demo Mode Toggle */}
+            <button
+              onClick={() => setIsOfflineMode(!isOfflineMode)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '4px 10px',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                borderRadius: '999px',
+                border: isOfflineMode ? '1px solid #818CF8' : '1px solid #E2E8F0',
+                backgroundColor: isOfflineMode ? '#EEF2FF' : '#FFFFFF',
+                color: isOfflineMode ? '#4F46E5' : '#64748B',
+                cursor: 'pointer'
+              }}
+              title="Toggle between live OpenAI and built-in curriculum engine"
+            >
+              <Sparkles size={13} />
+              <span>{isOfflineMode ? 'Demo Mode Active' : 'Demo Mode'}</span>
+            </button>
+
             <span style={{ fontSize: '0.72rem', color: '#64748B', fontWeight: 600 }}>
               Class {student.grade || '9th'} • {student.level || 'Beginner'}
             </span>
@@ -666,6 +774,74 @@ export const AITutor: React.FC = () => {
                         }}>
                           💡 {msg.structuredResponse?.directAnswer || msg.text}
                         </div>
+
+                        {/* Interactive Action Box when API Key is not configured */}
+                        {msg.structuredResponse?.directAnswer?.includes('AI Tutor API is not configured') && (
+                          <div style={{
+                            padding: '16px',
+                            backgroundColor: '#FEF3C7',
+                            borderRadius: '12px',
+                            border: '1px solid #FCD34D',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '12px'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#92400E', fontWeight: 700, fontSize: '0.92rem' }}>
+                              <Key size={17} color="#D97706" />
+                              <span>Quick Setup: Choose How You Would Like To Proceed</span>
+                            </div>
+                            <p style={{ margin: 0, fontSize: '0.84rem', color: '#78350F', lineHeight: '1.45' }}>
+                              Add your OpenAI API key for live AI tutoring across any question, or switch to Demo / Offline Mode to test curriculum topics instantly without an API key.
+                            </p>
+                            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                              <button
+                                onClick={() => setIsConfigModalOpen(true)}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  padding: '8px 16px',
+                                  backgroundColor: '#4F46E5',
+                                  color: '#FFFFFF',
+                                  border: 'none',
+                                  borderRadius: '8px',
+                                  fontSize: '0.84rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  boxShadow: '0 2px 8px rgba(79, 70, 229, 0.25)'
+                                }}
+                              >
+                                <Key size={14} />
+                                <span>Configure OpenAI API Key</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setIsOfflineMode(true);
+                                  const lastUser = [...messages].reverse().find((m) => m.sender === 'student');
+                                  if (lastUser && lastUser.text) {
+                                    handleSendMessage(lastUser.text, true);
+                                  }
+                                }}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  padding: '8px 16px',
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#4F46E5',
+                                  border: '1px solid #C7D2FE',
+                                  borderRadius: '8px',
+                                  fontSize: '0.84rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                <Sparkles size={14} />
+                                <span>Switch to Demo Mode & Answer Now</span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Core / Simple Explanation */}
                         {msg.structuredResponse?.simpleExplanation && (
@@ -1138,6 +1314,201 @@ export const AITutor: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* OpenAI Configuration Modal */}
+      {isConfigModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '16px'
+        }}>
+          <div style={{
+            backgroundColor: '#FFFFFF',
+            borderRadius: '16px',
+            maxWidth: '520px',
+            width: '100%',
+            padding: '24px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            border: '1px solid #E2E8F0'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  backgroundColor: '#EEF2FF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#4F46E5'
+                }}>
+                  <Key size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#1E293B' }}>
+                    Configure OpenAI API Key
+                  </h3>
+                  <p style={{ margin: '2px 0 0', fontSize: '0.78rem', color: '#64748B' }}>
+                    Powers live, adaptive curriculum tutoring across all subjects
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsConfigModalOpen(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#94A3B8',
+                  padding: '4px'
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveApiKey} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                  OpenAI API Key (sk-...)
+                </label>
+                <input
+                  type="password"
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  placeholder="sk-proj-..."
+                  autoFocus
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    border: '1px solid #CBD5E1',
+                    fontSize: '0.9rem',
+                    fontFamily: 'monospace',
+                    boxSizing: 'border-box'
+                  }}
+                />
+                <span style={{ display: 'block', fontSize: '0.74rem', color: '#64748B', marginTop: '4px' }}>
+                  Stored securely in your server's local <code style={{ backgroundColor: '#F1F5F9', padding: '1px 4px', borderRadius: '4px' }}>.env</code> file. Never exposed to browser client code.
+                </span>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                  Model Selection
+                </label>
+                <select
+                  value={modelInput}
+                  onChange={(e) => setModelInput(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    border: '1px solid #CBD5E1',
+                    fontSize: '0.88rem',
+                    backgroundColor: '#FFFFFF',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  <option value="gpt-4o-mini">gpt-4o-mini (Recommended - Fast & Cost-Effective)</option>
+                  <option value="gpt-4o">gpt-4o (Most Intelligent)</option>
+                  <option value="gpt-3.5-turbo">gpt-3.5-turbo (Legacy)</option>
+                </select>
+              </div>
+
+              {saveKeyError && (
+                <div style={{
+                  padding: '10px 14px',
+                  backgroundColor: '#FEF2F2',
+                  border: '1px solid #FECACA',
+                  borderRadius: '8px',
+                  color: '#DC2626',
+                  fontSize: '0.84rem'
+                }}>
+                  {saveKeyError}
+                </div>
+              )}
+
+              {saveKeySuccess && (
+                <div style={{
+                  padding: '10px 14px',
+                  backgroundColor: '#F0FDF4',
+                  border: '1px solid #BBF7D0',
+                  borderRadius: '8px',
+                  color: '#15803D',
+                  fontSize: '0.84rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}>
+                  <CheckCircle2 size={16} />
+                  <span>{saveKeySuccess}</span>
+                </div>
+              )}
+
+              <div style={{
+                padding: '10px 14px',
+                backgroundColor: '#F8FAFC',
+                borderRadius: '8px',
+                fontSize: '0.78rem',
+                color: '#64748B',
+                lineHeight: '1.4'
+              }}>
+                💡 <strong>Don't have an API key right now?</strong> You can close this modal and click <strong>"Demo Mode"</strong> to test questions like "What is photosynthesis?" or "Solve 2x + 5 = 15" using GuruMitra's built-in curriculum engine.
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsConfigModalOpen(false)}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    border: '1px solid #CBD5E1',
+                    backgroundColor: '#FFFFFF',
+                    color: '#475569',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingKey}
+                  style={{
+                    padding: '8px 20px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    backgroundColor: '#4F46E5',
+                    color: '#FFFFFF',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    cursor: isSavingKey ? 'not-allowed' : 'pointer',
+                    opacity: isSavingKey ? 0.7 : 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  {isSavingKey ? 'Saving...' : 'Save & Connect'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -47,20 +47,68 @@ export default defineConfig(({ mode }) => {
               // 0. OpenAI AI Tutor Endpoint (POST /api/ai-tutor or POST /api/ai/tutor)
               if ((urlPath === '/api/ai-tutor' || urlPath === '/api/ai/tutor') && req.method === 'POST') {
                 const body = await readBody();
+                const latestEnv = loadEnv(mode, process.cwd(), '');
+                const effectiveApiKey = process.env.OPENAI_API_KEY || latestEnv.OPENAI_API_KEY || openaiApiKey;
+                const effectiveModel = process.env.OPENAI_MODEL || latestEnv.OPENAI_MODEL || openaiModel || 'gpt-4o-mini';
+
                 const { handleAITutorRequest } = await import('./src/server/aiTutorHandler.js');
                 const result = await handleAITutorRequest(body, {
-                  apiKey: openaiApiKey,
-                  model: openaiModel
+                  apiKey: effectiveApiKey,
+                  model: effectiveModel
                 });
                 return sendJson(result.status, result.body);
               }
 
               // Endpoint: /api/ai-tutor/status (GET)
               if (urlPath === '/api/ai-tutor/status' && req.method === 'GET') {
+                const latestEnv = loadEnv(mode, process.cwd(), '');
+                const effectiveApiKey = process.env.OPENAI_API_KEY || latestEnv.OPENAI_API_KEY || openaiApiKey;
+                const effectiveModel = process.env.OPENAI_MODEL || latestEnv.OPENAI_MODEL || openaiModel || 'gpt-4o-mini';
                 return sendJson(200, {
-                  configured: Boolean(openaiApiKey),
-                  model: openaiModel
+                  configured: Boolean(effectiveApiKey),
+                  model: effectiveModel
                 });
+              }
+
+              // Endpoint: /api/ai-tutor/configure (POST) - Saves key to server .env securely
+              if (urlPath === '/api/ai-tutor/configure' && req.method === 'POST') {
+                const body = await readBody();
+                const newKey = (body.apiKey || '').trim();
+                const newModel = (body.model || '').trim() || 'gpt-4o-mini';
+                if (!newKey) {
+                  return sendJson(400, { error: 'No API key provided.' });
+                }
+
+                try {
+                  const fs = await import('fs');
+                  const path = await import('path');
+                  const envPath = path.resolve(process.cwd(), '.env');
+                  let envContent = '';
+                  if (fs.existsSync(envPath)) {
+                    envContent = fs.readFileSync(envPath, 'utf-8');
+                  }
+                  if (/^OPENAI_API_KEY=.*$/m.test(envContent)) {
+                    envContent = envContent.replace(/^OPENAI_API_KEY=.*$/m, `OPENAI_API_KEY=${newKey}`);
+                  } else {
+                    envContent += `\nOPENAI_API_KEY=${newKey}\n`;
+                  }
+                  if (/^OPENAI_MODEL=.*$/m.test(envContent)) {
+                    envContent = envContent.replace(/^OPENAI_MODEL=.*$/m, `OPENAI_MODEL=${newModel}`);
+                  } else {
+                    envContent += `\nOPENAI_MODEL=${newModel}\n`;
+                  }
+                  fs.writeFileSync(envPath, envContent, 'utf-8');
+                  process.env.OPENAI_API_KEY = newKey;
+                  process.env.OPENAI_MODEL = newModel;
+
+                  return sendJson(200, {
+                    success: true,
+                    configured: true,
+                    message: 'OpenAI API Key configured successfully in server environment.'
+                  });
+                } catch (saveErr: any) {
+                  return sendJson(500, { error: saveErr?.message || 'Failed to update .env' });
+                }
               }
 
               // 1. Server-side PDF Text Extraction Endpoint (Runs locally in Node.js, zero external API key needed)
@@ -517,7 +565,7 @@ Return ONLY a valid JSON object matching this schema:
     ],
     server: {
       port: 3009,
-      strictPort: true,
+      strictPort: false,
       open: false
     }
   };

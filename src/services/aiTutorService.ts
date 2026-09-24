@@ -16,6 +16,7 @@ export interface AITutorRequest {
     extractedText: string;
   } | null;
   conversationHistory?: TutorMessage[];
+  offlineMode?: boolean;
 }
 
 export type ResponseType = 'conceptual' | 'mathematical' | 'programming' | 'document' | 'general';
@@ -622,6 +623,29 @@ export function getGradeCalibrationNote(
 }
 
 /**
+ * Offline / Demo Curriculum Answer Generator
+ * Powered by GuruMitra's built-in academic curriculum engine for Classes 6-12 (CBSE / ICSE / UP Board).
+ */
+export function generateOfflineCurriculumAnswer(
+  request: AITutorRequest
+): NonNullable<TutorMessage['structuredResponse']> {
+  const { question, subject, learningStyle, gradeLevel, board, stream, difficulty } = request;
+  const detected = detectQuestionTopic(question, subject, Boolean(request.uploadedContext));
+  const crossNotice = (detected.subject !== subject)
+    ? `Notice: Your active subject is ${subject}, but this question belongs to ${detected.subject}. Answering with ${detected.subject} curriculum context.`
+    : undefined;
+  const followUps = generateFollowUpQuestions(detected.topicName, detected.subject, Boolean(request.uploadedContext));
+
+  if (detected.responseType === 'mathematical') {
+    return generateMathAnswer(question, learningStyle, gradeLevel, board, stream, difficulty, crossNotice, followUps);
+  }
+  if (detected.responseType === 'programming') {
+    return generateProgrammingAnswer(question, detected.topicName, learningStyle, gradeLevel, board, stream, difficulty, crossNotice, followUps);
+  }
+  return generateConceptualAnswer(question, detected.topicName, detected.subject, learningStyle, gradeLevel, board, stream, difficulty, crossNotice, followUps);
+}
+
+/**
  * Core Answer Generator:
  * Connects directly to the server-side OpenAI Responses API endpoint (/api/ai-tutor).
  * Dispatches student context, active subject, learning style, and recent conversation.
@@ -640,12 +664,18 @@ export async function generateTutorAnswer(
     chapter,
     topic,
     uploadedContext,
-    conversationHistory
+    conversationHistory,
+    offlineMode
   } = request;
 
   const cleanQ = question.trim();
   if (!cleanQ) {
     throw new Error('Please enter a question.');
+  }
+
+  // If student is in explicit offline / demo mode, resolve via curriculum engine
+  if (offlineMode) {
+    return generateOfflineCurriculumAnswer(request);
   }
 
   // Format recent conversation history for multi-turn conversational memory (cost-controlled)
