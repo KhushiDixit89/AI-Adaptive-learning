@@ -149,33 +149,40 @@ export const SyllabusUploadView: React.FC = () => {
     getSubjectStatus(sub) !== 'pending'
   ).length;
 
+  const anyUploaded = preferredSubjects.some((sub) => syllabusFiles[sub] !== null);
   const allConfigured = configuredCount === preferredSubjects.length;
 
-  const handleStartLearning = async () => {
+  const handleStartLearning = async (skipAll = false) => {
     setIsCompleting(true);
 
     // Prepare files for completeSyllabusSetup (keep file object for extraction)
     const filesToSubmit: Record<string, any> = {};
     preferredSubjects.forEach((subject) => {
-      const fileData = syllabusFiles[subject];
+      const fileData = skipAll ? null : syllabusFiles[subject];
       if (fileData) {
         filesToSubmit[subject] = {
           ...fileData,
-          // Ensure we keep the file object for PDF extraction
           file: fileData.file
+        };
+      } else {
+        // Automatically provide standard curriculum fallback for unuploaded/skipped subjects
+        filesToSubmit[subject] = {
+          name: `${subject} Standard Curriculum`,
+          size: 0,
+          type: 'standard',
+          uploadedAt: new Date().toISOString()
         };
       }
     });
 
-    // Simulate upload delay for premium UX
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    await new Promise((resolve) => setTimeout(resolve, 600));
 
     await completeSyllabusSetup(filesToSubmit);
     setIsCompleting(false);
     // Navigate to syllabus analysis view
     setActiveTab('syllabus-analysis');
-    // Set active subject to first subject that has syllabus data
-    const firstSubjectWithData = preferredSubjects.find(sub => syllabusFiles[sub] !== null);
+    // Set active subject to first subject that has syllabus data, or the first preferred subject
+    const firstSubjectWithData = preferredSubjects.find(sub => !skipAll && syllabusFiles[sub] !== null) || preferredSubjects[0];
     if (firstSubjectWithData) {
       setActiveSubject(firstSubjectWithData);
     }
@@ -562,33 +569,59 @@ export const SyllabusUploadView: React.FC = () => {
           </div>
         </div>
 
-        {/* CTA Button */}
-        <button
-          onClick={handleStartLearning}
-          disabled={!allConfigured || isCompleting}
-          className="btn btn-primary"
-          style={{
-            width: '100%',
-            padding: '16px 32px',
-            fontSize: '1.05rem',
-            fontWeight: 700,
-            opacity: (!allConfigured || isCompleting) ? 0.5 : 1,
-            cursor: (!allConfigured || isCompleting) ? 'not-allowed' : 'pointer',
-            position: 'relative'
-          }}
-        >
-          {isCompleting ? (
-            <>
-              <Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} />
-              <span>Setting up your learning plan...</span>
-            </>
-          ) : (
-            <>
-              <Sparkles size={20} />
-              <span>AI Analyse All Syllabuses</span>
-            </>
-          )}
-        </button>
+        {/* Action Buttons */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <button
+            onClick={() => handleStartLearning(false)}
+            disabled={(!allConfigured && !anyUploaded) || isCompleting}
+            className="btn btn-primary"
+            style={{
+              width: '100%',
+              padding: '16px 32px',
+              fontSize: '1.05rem',
+              fontWeight: 700,
+              opacity: ((!allConfigured && !anyUploaded) || isCompleting) ? 0.5 : 1,
+              cursor: ((!allConfigured && !anyUploaded) || isCompleting) ? 'not-allowed' : 'pointer',
+              position: 'relative'
+            }}
+          >
+            {isCompleting ? (
+              <>
+                <Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} />
+                <span>Setting up your learning plan...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles size={20} />
+                <span>{anyUploaded ? 'AI Analyse Uploaded Syllabuses & Continue' : 'AI Analyse Syllabuses'}</span>
+              </>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleStartLearning(true)}
+            disabled={isCompleting}
+            className="btn btn-outline"
+            style={{
+              width: '100%',
+              padding: '13px 24px',
+              fontSize: '0.95rem',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              backgroundColor: '#FFFFFF',
+              borderColor: '#CBD5E1',
+              color: '#475569',
+              cursor: isCompleting ? 'not-allowed' : 'pointer'
+            }}
+          >
+            <SkipForward size={17} />
+            <span>Continue with Built-in Standard Syllabus (Skip Upload)</span>
+          </button>
+        </div>
 
         {/* Footer Note */}
         <div style={{

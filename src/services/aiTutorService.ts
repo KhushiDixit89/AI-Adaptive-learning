@@ -630,6 +630,28 @@ export function generateOfflineCurriculumAnswer(
   request: AITutorRequest
 ): NonNullable<TutorMessage['structuredResponse']> {
   const { question, subject, learningStyle, gradeLevel, board, stream, difficulty } = request;
+
+  const cleanLower = question.trim().toLowerCase();
+  const isGreeting = /^(hi|hello|hey|namaste|good\s*(morning|afternoon|evening)|hola|hii+)\b/i.test(cleanLower);
+  if (isGreeting && cleanLower.length <= 25) {
+    return {
+      responseType: 'general',
+      directAnswer: `Hello! I'm GuruMitra, your personal AI Tutor for ${subject}.`,
+      simpleExplanation: `I'm calibrated for your ${gradeLevel || 'Class 9'} (${board || 'CBSE'}${stream && stream !== 'Not applicable' ? ' • ' + stream : ''}) syllabus. Ask me any question, ask for step-by-step problem solving, or pick one of the suggestions below!`,
+      keyConcept: `Active Learning: Ask questions anytime in ${subject} or switch between Simple, Analogy, Visual, and Exam modes.`,
+      example: subject === 'Mathematics'
+        ? 'Try: "Solve 2x + 5 = 15" or "Explain quadratic equations"'
+        : subject === 'Science'
+        ? 'Try: "Explain photosynthesis" or "What is Newton\'s third law?"'
+        : `Ask any concept, question, or problem from your ${subject} syllabus!`,
+      followUpQuestions: [
+        `Explain the core concepts of ${subject}`,
+        `Give me an exam-style practice question for ${subject}`,
+        `What are the most important formulas/definitions?`
+      ]
+    };
+  }
+
   const detected = detectQuestionTopic(question, subject, Boolean(request.uploadedContext));
   const crossNotice = (detected.subject !== subject)
     ? `Notice: Your active subject is ${subject}, but this question belongs to ${detected.subject}. Answering with ${detected.subject} curriculum context.`
@@ -722,6 +744,10 @@ export async function generateTutorAnswer(
             'What is a binary tree?'
           ]
         };
+      }
+
+      if (res.status === 429) {
+        return generateOfflineCurriculumAnswer(request);
       }
 
       const errMsg = data?.error || 'AI Tutor is temporarily unavailable. Please try again.';

@@ -300,36 +300,20 @@ You MUST respond with ONLY a valid, parseable JSON object matching this schema:
 
   let rawText = '';
   try {
-    // 1. Primary: Use the official OpenAI Responses API (client.responses.create)
-    const response = await client.responses.create({
+    const chatMessages = [
+      { role: 'system', content: systemPrompt },
+      ...inputItems
+    ];
+    const chatRes = await client.chat.completions.create({
       model,
-      instructions: systemPrompt,
-      input: inputItems
+      messages: chatMessages as any,
+      temperature: 0.3,
+      response_format: { type: 'json_object' }
     });
-    rawText = response.output_text || extractTextFromResponse(response);
+    rawText = chatRes.choices?.[0]?.message?.content || '';
   } catch (apiErr: any) {
-    console.error('OpenAI Responses API error:', apiErr?.status, apiErr?.message);
-
-    // If /responses endpoint is 404 / unsupported for the specific model/account, try Chat Completions fallback
-    if (apiErr?.status === 404 || apiErr?.message?.includes('endpoint') || apiErr?.message?.includes('responses')) {
-      try {
-        const chatMessages = [
-          { role: 'system', content: systemPrompt },
-          ...inputItems
-        ];
-        const chatRes = await client.chat.completions.create({
-          model,
-          messages: chatMessages as any,
-          temperature: 0.3
-        });
-        rawText = chatRes.choices?.[0]?.message?.content || '';
-      } catch (fallbackErr: any) {
-        console.error('OpenAI fallback error:', fallbackErr);
-        return formatOpenAiError(fallbackErr, model);
-      }
-    } else {
-      return formatOpenAiError(apiErr, model);
-    }
+    console.error('OpenAI API error:', apiErr?.status, apiErr?.message);
+    return formatOpenAiError(apiErr, model);
   }
 
   if (!rawText) {

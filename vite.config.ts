@@ -18,55 +18,95 @@ export default defineConfig(({ mode }) => {
             const rawUrl = req.url || '';
             const urlPath = rawUrl.split('?')[0];
 
-            if (!urlPath.startsWith('/api/ai/') && urlPath !== '/api/ai-tutor' && urlPath !== '/api/ai-tutor/status') {
+            if (!urlPath.startsWith('/api/ai/') && !urlPath.startsWith('/api/ai-tutor')) {
               return next();
             }
 
             const sendJson = (status: number, data: any) => {
+              const bodyStr = JSON.stringify(data);
               res.statusCode = status;
               res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify(data));
+              res.setHeader('Content-Length', Buffer.byteLength(bodyStr));
+              res.end(bodyStr);
             };
 
             const readBody = (): Promise<any> => {
               return new Promise((resolve, reject) => {
+                if ((req as any).body && typeof (req as any).body === 'object') {
+                  return resolve((req as any).body);
+                }
+                if (req.readableEnded) {
+                  return resolve({});
+                }
                 let data = '';
                 req.on('data', chunk => { data += chunk; });
                 req.on('end', () => {
                   try {
                     resolve(data ? JSON.parse(data) : {});
                   } catch (e) {
-                    reject(e);
+                    resolve({});
                   }
                 });
-                req.on('error', reject);
+                req.on('error', (err) => {
+                  console.error('Request stream error:', err);
+                  resolve({});
+                });
               });
+            };
+
+            const getEffectiveConfig = async () => {
+              try {
+                const fs = await import('fs');
+                const path = await import('path');
+                const envPath = path.resolve(process.cwd(), '.env');
+                if (fs.existsSync(envPath)) {
+                  const content = fs.readFileSync(envPath, 'utf-8');
+                  const keyMatch = content.match(/^OPENAI_API_KEY=(.*)$/m);
+                  const modelMatch = content.match(/^OPENAI_MODEL=(.*)$/m);
+                  if (keyMatch !== null) {
+                    const rawKey = keyMatch[1].trim().replace(/^['"]|['"]$/g, '').replace(/^OPENAI_API_KEY=/i, '').trim();
+                    const rawModel = modelMatch ? modelMatch[1].trim().replace(/^['"]|['"]$/g, '') : 'gpt-4o-mini';
+                    return { apiKey: rawKey, model: rawModel || 'gpt-4o-mini' };
+                  }
+                }
+              } catch (e) {
+                console.error('Error reading .env directly:', e);
+              }
+              const latestEnv = loadEnv(mode, process.cwd(), '');
+              return {
+                apiKey: (latestEnv.OPENAI_API_KEY || openaiApiKey || '').trim(),
+                model: latestEnv.OPENAI_MODEL || openaiModel || 'gpt-4o-mini'
+              };
             };
 
             try {
               // 0. OpenAI AI Tutor Endpoint (POST /api/ai-tutor or POST /api/ai/tutor)
               if ((urlPath === '/api/ai-tutor' || urlPath === '/api/ai/tutor') && req.method === 'POST') {
                 const body = await readBody();
-                const latestEnv = loadEnv(mode, process.cwd(), '');
-                const effectiveApiKey = process.env.OPENAI_API_KEY || latestEnv.OPENAI_API_KEY || openaiApiKey;
-                const effectiveModel = process.env.OPENAI_MODEL || latestEnv.OPENAI_MODEL || openaiModel || 'gpt-4o-mini';
+                const { apiKey, model } = await getEffectiveConfig();
 
-                const { handleAITutorRequest } = await import('./src/server/aiTutorHandler.js');
-                const result = await handleAITutorRequest(body, {
-                  apiKey: effectiveApiKey,
-                  model: effectiveModel
+                let handler: any;
+                try {
+                  const mod = await server.ssrLoadModule('./src/server/aiTutorHandler.ts');
+                  handler = mod.handleAITutorRequest;
+                } catch {
+                  const mod = await import('./src/server/aiTutorHandler.js').catch(() => null) || await import('./src/server/aiTutorHandler.ts');
+                  handler = mod.handleAITutorRequest;
+                }
+
+                const result = await handler(body, {
+                  apiKey,
+                  model
                 });
                 return sendJson(result.status, result.body);
               }
 
               // Endpoint: /api/ai-tutor/status (GET)
               if (urlPath === '/api/ai-tutor/status' && req.method === 'GET') {
-                const latestEnv = loadEnv(mode, process.cwd(), '');
-                const effectiveApiKey = process.env.OPENAI_API_KEY || latestEnv.OPENAI_API_KEY || openaiApiKey;
-                const effectiveModel = process.env.OPENAI_MODEL || latestEnv.OPENAI_MODEL || openaiModel || 'gpt-4o-mini';
+                const { apiKey, model } = await getEffectiveConfig();
                 return sendJson(200, {
-                  configured: Boolean(effectiveApiKey),
-                  model: effectiveModel
+                  configured: Boolean(apiKey),
+                  model
                 });
               }
 
